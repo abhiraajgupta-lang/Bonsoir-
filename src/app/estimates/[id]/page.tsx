@@ -37,6 +37,7 @@ interface EstimateData {
   customerId: string | null
   customerName: string
   mobile: string | null
+  channel: string | null
   trialDate: string | null
   deliveryDate: string | null
   totalAmount: number
@@ -103,7 +104,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
     setDiscountValue(data.discountValue || 0)
     setAdvanceAmount(data.advanceAmount ?? 0)
     setAdvancePaymentMode(data.advancePaymentMode || 'Cash')
-    setChannel((data as Record<string, unknown>).channel as string || 'In-Store')
+    setChannel(data.channel || 'In-Store')
   }
 
   useEffect(() => { load() }, [id])
