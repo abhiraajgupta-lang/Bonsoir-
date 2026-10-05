@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bonsoir-dev",
+      "runtimeExecutable": "/Users/abhiraajgupta/.nvm/versions/node/v20.20.2/bin/npx",
+      "runtimeArgs": ["next", "dev"],
+      "port": 3000
+    }
+  ]
+}

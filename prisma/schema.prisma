@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  customerId  String   @unique
+  name        String
+  countryCode String   @default("+91")
+  mobile      String   @unique
+  email       String?
+  dateOfBirth String?
+  address     String?
+  city        String?
+  anniversary String?
+  notes       String?
+  customNotes String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  measurements MeasurementSet[]
+  orders       Order[]
+  estimates    Estimate[]
+}
+
+model MeasurementSet {
+  id         String   @id @default(cuid())
+  customerId String
+  version    Int
+  date       DateTime @default(now())
+  chest      Float?
+  stomach    Float?
+  hips       Float?
+  shoulder   Float?
+  sleeveLength Float?
+  bicep      Float?
+  neck       Float?
+  waist      Float?
+  trouserLength Float?
+  thigh      Float?
+  knee       Float?
+  bottom     Float?
+  fork       Float?
+  allRound   Float?
+  calf       Float?
+  inSeam     Float?
+  sherwaniLength Float?
+  jacketLength Float?
+  kurtalength Float?
+  indoWesternLength Float?
+  suitLength Float?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  jobs     Job[]
+}
+
+model Order {
+  id            String   @id @default(cuid())
+  orderNumber   Int      @unique
+  customerId    String
+  eventName     String?
+  deliveryDate  DateTime
+  salesperson   String?
+  channel       String   @default("In-Store")
+  totalAmount   Float    @default(0)
+  discountType  String?
+  discountValue Float    @default(0)
+  discountAmount Float   @default(0)
+  netPayable    Float    @default(0)
+  advancePaid   Float    @default(0)
+  balanceDue    Float    @default(0)
+  status        String   @default("Active")
+  notes         String?
+  estimateId    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  jobs     Job[]
+  payments Payment[]
+}
+
+model Job {
+  id               String   @id @default(cuid())
+  jobNumber        String   @unique
+  orderId          String
+  styleId          String?
+  garmentType      String
+  fabricDetails    String?
+  designNotes      String?
+  jobNotes         String?
+  deliveryDate     DateTime?
+  currentStage     String   @default("Order Placed")
+  assignedWorker   String?
+  measurementSetId String?
+  jobMeasurements  String?
+  amount           Float    @default(0)
+  status           String   @default("Active")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  style          Style?          @relation(fields: [styleId], references: [id])
+  measurementSet MeasurementSet? @relation(fields: [measurementSetId], references: [id])
+  stageHistory   StageHistory[]
+  trials         Trial[]
+}
+
+model StageHistory {
+  id        String   @id @default(cuid())
+  jobId     String
+  stage     String
+  notes     String?
+  worker    String?
+  createdAt DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model Style {
+  id          String   @id @default(cuid())
+  styleCode   String?  @unique
+  name        String?
+  category    String
+  pieces      Int      @default(1)
+  color       String?
+  price       Float    @default(0)
+  description String?
+  fabric      String?
+  imageUrl    String?
+  status      String   @default("Active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  jobs Job[]
+}
+
+model Trial {
+  id          String   @id @default(cuid())
+  jobId       String
+  trialDate   DateTime
+  notes       String?
+  outcome     String   @default("Pending")
+  createdAt   DateTime @default(now())
+
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  alterations  Alteration[]
+}
+
+model Alteration {
+  id          String   @id @default(cuid())
+  trialId     String
+  details     String
+  status      String   @default("Pending")
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  trial Trial @relation(fields: [trialId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  orderId         String
+  amount          Float
+  method          String
+  receiptReference String?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Estimate {
+  id             String   @id @default(cuid())
+  estimateNumber Int      @unique
+  customerId     String?
+  customerName   String
+  mobile         String?
+  trialDate      DateTime?
+  deliveryDate   DateTime?
+  items          String?
+  totalAmount    Float    @default(0)
+  discountType   String?
+  discountValue  Float    @default(0)
+  discountAmount Float    @default(0)
+  netPayable     Float    @default(0)
+  advanceAmount  Float    @default(0)
+  advancePaymentMode String?
+  balancePayment Float    @default(0)
+  notes          String?
+  channel        String   @default("In-Store")
+  status         String   @default("Created")
+  convertedOrderId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+}
+
+model Footfall {
+  id              String   @id @default(cuid())
+  customerName    String
+  mobile          String?
+  visitSource     String
+  referenceCustomer String?
+  followUpStatus  String   @default("Pending")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model TodoItem {
+  id          String   @id @default(cuid())
+  todoId      String   @unique
+  title       String
+  description String?
+  assignedTo  String?
+  deadline    DateTime?
+  status      String   @default("Pending")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  comments TodoComment[]
+}
+
+model TodoComment {
+  id        String   @id @default(cuid())
+  todoId    String
+  author    String
+  content   String
+  createdAt DateTime @default(now())
+
+  todo TodoItem @relation(fields: [todoId], references: [id], onDelete: Cascade)
+}
+
+model Employee {
+  id        String   @id @default(cuid())
+  name      String
+  role      String
+  mobile    String?
+  email     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Counter {
+  id    String @id
+  value Int    @default(0)
+}

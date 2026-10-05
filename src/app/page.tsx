@@ -1,69 +1,110 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import { useEffect, useState } from 'react'
+import { ShoppingBag, Scissors, Truck, AlertTriangle, IndianRupee } from 'lucide-react'
+import { formatCurrency } from '@/lib/constants'
+import Link from 'next/link'
+
+interface AttentionItem {
+  jobNumber: string
+  orderNumber: number
+  customerName: string
+  garmentType: string
+  currentStage: string
+  reason: string
+  priority: number
+  daysLeft: number
+}
+
+interface DashboardData {
+  activeOrders: number
+  trialsToday: number
+  deliveriesToday: number
+  overdue: number
+  paymentsPending: number
+  attentionItems: AttentionItem[]
+}
+
+export default function Dashboard() {
+  const [data, setData] = useState<DashboardData | null>(null)
+
+  useEffect(() => {
+    fetch('/api/dashboard')
+      .then(r => r.json())
+      .then(setData)
+  }, [])
+
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  const cards = [
+    { label: 'Active Orders', value: data.activeOrders, icon: ShoppingBag, color: 'text-foreground' },
+    { label: 'Trials Today', value: data.trialsToday, icon: Scissors, color: 'text-foreground' },
+    { label: 'Deliveries Today', value: data.deliveriesToday, icon: Truck, color: 'text-foreground' },
+    { label: 'Overdue', value: data.overdue, icon: AlertTriangle, color: data.overdue > 0 ? 'text-red' : 'text-foreground' },
+    { label: 'Payments Pending', value: formatCurrency(data.paymentsPending), icon: IndianRupee, color: 'text-foreground' },
+  ]
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div>
+      <h1 className="text-2xl font-semibold mb-6">Dashboard</h1>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        {cards.map(c => (
+          <div key={c.label} className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <c.icon className="w-4 h-4 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{c.label}</span>
+            </div>
+            <p className={`text-2xl font-semibold ${c.color}`}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold mb-4">Attention Required</h2>
+
+        {data.attentionItems.length === 0 ? (
+          <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
+            All orders are on track. Nothing needs immediate attention.
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {data.attentionItems.map(item => {
+              const borderColor = item.daysLeft < 0 || item.priority >= 3
+                ? 'border-l-red'
+                : 'border-l-amber'
+
+              return (
+                <Link
+                  key={item.jobNumber}
+                  href={`/orders`}
+                  className={`flex items-center justify-between bg-card border border-border border-l-4 ${borderColor} rounded-xl p-4 hover:shadow-sm transition-shadow`}
+                >
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-semibold">Job #{item.jobNumber}</span>
+                      <span className="text-xs text-muted-foreground">Order #{item.orderNumber}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {item.customerName} · {item.garmentType}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium">{item.reason}</p>
+                    <p className="text-xs text-muted-foreground">Stage: {item.currentStage}</p>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
 }
