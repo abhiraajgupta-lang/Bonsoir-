@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile } from 'fs/promises'
-import path from 'path'
+import { supabase } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData()
@@ -10,11 +9,24 @@ export async function POST(req: NextRequest) {
   const bytes = await file.arrayBuffer()
   const buffer = Buffer.from(bytes)
 
-  const ext = path.extname(file.name) || '.jpg'
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`
-  const uploadPath = path.join(process.cwd(), 'public', 'uploads', 'styles', filename)
+  const ext = file.name.split('.').pop() || 'jpg'
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+  const filePath = `styles/${filename}`
 
-  await writeFile(uploadPath, buffer)
+  const { error } = await supabase.storage
+    .from('style-images')
+    .upload(filePath, buffer, {
+      contentType: file.type,
+      upsert: false,
+    })
 
-  return NextResponse.json({ url: `/uploads/styles/${filename}` })
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  const { data: urlData } = supabase.storage
+    .from('style-images')
+    .getPublicUrl(filePath)
+
+  return NextResponse.json({ url: urlData.publicUrl })
 }

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "better-sqlite3": "^12.11.1",
+    "@supabase/supabase-js": "^2.109.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.48.0",
