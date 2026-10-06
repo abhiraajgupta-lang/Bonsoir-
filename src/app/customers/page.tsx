@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Search, Plus, AlertCircle } from 'lucide-react'
+import { Search, Plus, AlertCircle, Trash2 } from 'lucide-react'
+import { useAuth } from '@/lib/auth-context'
 import { formatCurrency } from '@/lib/constants'
 
 interface Customer {
@@ -30,6 +31,7 @@ const COUNTRY_CODES = [
 ]
 
 export default function CustomersPage() {
+  const { canDelete } = useAuth()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
@@ -41,6 +43,13 @@ export default function CustomersPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  const deleteCustomer = async (c: Customer) => {
+    if (!confirm(`Delete customer ${c.name} (${c.customerId})? This also deletes their ${c._count.orders} order(s), estimates and measurements. This cannot be undone.`)) return
+    const res = await fetch(`/api/customers/${c.id}`, { method: 'DELETE' })
+    if (res.ok) load(search)
+    else alert('Failed to delete customer')
+  }
 
   useEffect(() => {
     const t = setTimeout(() => load(search), 300)
@@ -164,6 +173,7 @@ export default function CustomersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden md:table-cell">City</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3">Orders</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden lg:table-cell">Total Spend</th>
+                {canDelete && <th className="px-4 py-3 w-10"></th>}
               </tr>
             </thead>
             <tbody>
@@ -179,6 +189,13 @@ export default function CustomersPage() {
                     <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">{c.city || '—'}</td>
                     <td className="px-4 py-3 text-sm">{c._count.orders}</td>
                     <td className="px-4 py-3 text-sm font-medium hidden lg:table-cell">{formatCurrency(totalSpend)}</td>
+                    {canDelete && (
+                      <td className="px-4 py-3">
+                        <button onClick={() => deleteCustomer(c)} title="Delete customer" className="text-muted-foreground hover:text-red p-1">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}

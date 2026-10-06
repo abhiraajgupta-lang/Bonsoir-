@@ -1,15 +1,11 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
+import { Role, ROLE_LABELS, canAccessPage, canDelete as roleCanDelete, isRole } from '@/lib/roles'
 
-export type Role = 'owner' | 'store_manager' | 'production_manager' | 'designer'
-
-export const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Owner',
-  store_manager: 'Store Manager',
-  production_manager: 'Production Manager',
-  designer: 'Designer / Merchandiser',
-}
+export { ROLE_LABELS }
+export type { Role }
 
 export interface Employee {
   id: string
@@ -18,72 +14,74 @@ export interface Employee {
   mobile: string | null
   email: string | null
   active: boolean
+  hasPassword?: boolean
+}
+
+export interface CurrentUser {
+  id: string
+  name: string
+  role: Role
+  mobile: string | null
+  email: string | null
 }
 
 interface AuthContextType {
-  currentEmployee: Employee | null
-  setCurrentEmployee: (emp: Employee | null) => void
+  currentEmployee: CurrentUser | null
   role: Role
   hasAccess: (path: string) => boolean
   canCreateTodo: boolean
   canSeeCustomerContact: boolean
+  canDelete: boolean
+  logout: () => Promise<void>
 }
 
-const ROLE_ALLOWED_PATHS: Record<Role, string[]> = {
-  owner: ['/', '/orders', '/customers', '/styles', '/estimates', '/production', '/trials', '/footfall', '/todos', '/employees'],
-  store_manager: ['/', '/orders', '/customers', '/styles', '/estimates', '/production', '/trials', '/footfall', '/todos'],
-  production_manager: ['/orders'],
-  designer: ['/styles'],
-}
-
-const AuthContext = createContext<AuthContextType>({
-  currentEmployee: null,
-  setCurrentEmployee: () => {},
-  role: 'owner',
-  hasAccess: () => true,
-  canCreateTodo: true,
-  canSeeCustomerContact: true,
-})
+const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentEmployee, setCurrentEmployeeState] = useState<Employee | null>(null)
+  const pathname = usePathname()
+  const isLoginPage = pathname === '/login'
+  const [user, setUser] = useState<CurrentUser | null>(null)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('bonsoir_employee')
-      if (stored) setCurrentEmployeeState(JSON.parse(stored))
-    } catch {}
-    setLoaded(true)
-  }, [])
+    if (isLoginPage) return
+    fetch('/api/auth/me')
+      .then(r => (r.ok ? r.json() : null))
+      .then((me: CurrentUser | null) => {
+        if (!me || !isRole(me.role)) {
+          window.location.href = `/login?next=${encodeURIComponent(pathname)}`
+          return
+        }
+        setUser(me)
+        setLoaded(true)
+      })
+  }, [isLoginPage])
 
-  const setCurrentEmployee = (emp: Employee | null) => {
-    setCurrentEmployeeState(emp)
-    if (emp) {
-      localStorage.setItem('bonsoir_employee', JSON.stringify(emp))
-    } else {
-      localStorage.removeItem('bonsoir_employee')
-    }
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    window.location.href = '/login'
   }
 
-  const role = (currentEmployee?.role as Role) || 'owner'
-
-  const hasAccess = (path: string) => {
-    if (!currentEmployee) return true
-    const allowed = ROLE_ALLOWED_PATHS[role] || []
-    return allowed.some(p => p === '/' ? path === '/' : path.startsWith(p))
-  }
-
-  const canCreateTodo = role === 'owner'
-  const canSeeCustomerContact = role !== 'production_manager'
-
+  if (isLoginPage) return <>{children}</>
   if (!loaded) return null
+  if (!user) return null
 
-  return (
-    <AuthContext.Provider value={{ currentEmployee, setCurrentEmployee, role, hasAccess, canCreateTodo, canSeeCustomerContact }}>
-      {children}
-    </AuthContext.Provider>
-  )
+  const role = user.role
+  const value: AuthContextType = {
+    currentEmployee: user,
+    role,
+    hasAccess: (path: string) => canAccessPage(role, path),
+    canCreateTodo: role === 'owner',
+    canSeeCustomerContact: role !== 'production_manager',
+    canDelete: roleCanDelete(role),
+    logout,
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export const useAuth = () => useContext(AuthContext)
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used inside a logged-in page')
+  return ctx
+}

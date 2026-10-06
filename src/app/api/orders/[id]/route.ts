@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { hideContactFor } from '@/lib/employees'
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const order = await prisma.order.findUnique({
     where: { id },
@@ -20,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   })
 
   if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(order)
+  return NextResponse.json(hideContactFor(req.headers.get('x-user-role'), order))
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -40,4 +41,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   })
 
   return NextResponse.json(order)
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  await prisma.$transaction([
+    prisma.estimate.updateMany({ where: { convertedOrderId: id }, data: { status: 'Created', convertedOrderId: null } }),
+    prisma.order.delete({ where: { id } }),
+  ])
+  return NextResponse.json({ ok: true })
 }

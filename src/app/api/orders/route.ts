@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { createJobsForItem, getStylePieces } from '@/lib/jobs'
+import { hideContactFor } from '@/lib/employees'
 
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status')
@@ -16,7 +18,8 @@ export async function GET(req: NextRequest) {
     take: 200,
   })
 
-  return NextResponse.json(orders)
+  const role = req.headers.get('x-user-role')
+  return NextResponse.json(orders.map(o => hideContactFor(role, o)))
 }
 
 export async function POST(req: NextRequest) {
@@ -63,32 +66,26 @@ export async function POST(req: NextRequest) {
   })
 
   if (body.jobs && Array.isArray(body.jobs)) {
-    for (let i = 0; i < body.jobs.length; i++) {
-      const job = body.jobs[i]
-      const jobNumber = `${orderNumber}-${String(i + 1).padStart(2, '0')}`
-      const created = await prisma.job.create({
-        data: {
-          jobNumber,
+    await prisma.$transaction(async tx => {
+      const livePieces = await getStylePieces(tx, body.jobs.map((j: { styleId?: string }) => j.styleId))
+      for (let i = 0; i < body.jobs.length; i++) {
+        const job = body.jobs[i]
+        await createJobsForItem(tx, {
           orderId: order.id,
-          styleId: job.styleId || null,
+          baseJobNumber: `${orderNumber}-${String(i + 1).padStart(2, '0')}`,
           garmentType: job.garmentType,
-          fabricDetails: job.fabricDetails || null,
-          designNotes: job.designNotes || null,
-          jobNotes: job.jobNotes || null,
-          deliveryDate: job.deliveryDate ? new Date(job.deliveryDate) : null,
-          measurementSetId: job.measurementSetId || null,
-          jobMeasurements: job.jobMeasurements ? JSON.stringify(job.jobMeasurements) : null,
           amount: job.amount || 0,
-          currentStage: 'Order Placed',
-        },
-      })
-      await prisma.stageHistory.create({
-        data: {
-          jobId: created.id,
-          stage: 'Order Placed',
-        },
-      })
-    }
+          styleId: job.styleId,
+          pieces: (job.styleId && livePieces.get(job.styleId)) || 1,
+          measurementSetId: job.measurementSetId,
+          deliveryDate: job.deliveryDate ? new Date(job.deliveryDate) : null,
+          fabricDetails: job.fabricDetails,
+          designNotes: job.designNotes,
+          jobNotes: job.jobNotes,
+          jobMeasurements: job.jobMeasurements ? JSON.stringify(job.jobMeasurements) : null,
+        })
+      }
+    }, { timeout: 20000 })
   }
 
   if (advancePaid > 0) {

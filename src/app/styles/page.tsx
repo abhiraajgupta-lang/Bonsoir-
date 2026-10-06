@@ -118,6 +118,8 @@ export default function StylesPage() {
       body: JSON.stringify(editForm),
     })
     if (res.ok) {
+      const saved = await res.json()
+      if (saved.ordersUpdated > 0) alert(`Piece count updated on ${saved.ordersUpdated} active order item(s).`)
       setEditingStyle(null)
       load()
     }

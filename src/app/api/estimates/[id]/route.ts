@@ -53,3 +53,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   return NextResponse.json(estimate)
 }
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  await prisma.estimate.delete({ where: { id } })
+  return NextResponse.json({ ok: true })
+}

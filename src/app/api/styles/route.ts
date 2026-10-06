@@ -8,9 +8,9 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = {}
   if (search) {
     where.OR = [
-      { name: { contains: search } },
-      { styleCode: { contains: search } },
-      { color: { contains: search } },
+      { name: { contains: search, mode: 'insensitive' as const } },
+      { styleCode: { contains: search, mode: 'insensitive' as const } },
+      { color: { contains: search, mode: 'insensitive' as const } },
     ]
   }
   if (category && category !== 'All') {

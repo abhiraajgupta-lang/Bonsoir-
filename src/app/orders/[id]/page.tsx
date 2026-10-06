@@ -2,7 +2,8 @@
 
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Plus, IndianRupee } from 'lucide-react'
+import { ArrowLeft, Plus, IndianRupee, Trash2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { PRODUCTION_STAGES, PAYMENT_METHODS, TRIAL_OUTCOMES, formatCurrency, formatDate, formatDateTime, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
@@ -55,7 +56,8 @@ interface OrderData {
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { canSeeCustomerContact } = useAuth()
+  const { canSeeCustomerContact, canDelete } = useAuth()
+  const router = useRouter()
   const [order, setOrder] = useState<OrderData | null>(null)
   const [showPayment, setShowPayment] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState(0)
@@ -147,6 +149,19 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </p>
         </div>
         <div className="mt-2 sm:mt-0 flex items-center gap-2">
+          {canDelete && (
+            <button
+              onClick={async () => {
+                if (!confirm(`Delete Order #${order.orderNumber}? All its jobs, trials and payments will be removed. This cannot be undone.`)) return
+                const res = await fetch(`/api/orders/${id}`, { method: 'DELETE' })
+                if (res.ok) router.push('/orders')
+                else alert('Failed to delete order')
+              }}
+              className="flex items-center gap-1 px-3 py-1 border border-border rounded-lg text-xs font-medium text-red hover:bg-muted"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
           <span className={`inline-flex px-2.5 py-1 rounded text-xs font-semibold ${
             order.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
           }`}>

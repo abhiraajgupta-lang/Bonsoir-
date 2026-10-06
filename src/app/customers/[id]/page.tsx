@@ -2,7 +2,9 @@
 
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Ruler, Edit2, Check, X } from 'lucide-react'
+import { ArrowLeft, Plus, Ruler, Edit2, Check, X, Trash2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/auth-context'
 import { formatCurrency, formatDate } from '@/lib/constants'
 
 interface CustomerData {
@@ -88,6 +90,8 @@ const MEASUREMENT_FIELDS = [
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const router = useRouter()
+  const { canDelete } = useAuth()
   const [customer, setCustomer] = useState<CustomerData | null>(null)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState<Partial<CustomerData>>({})
@@ -177,6 +181,19 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <button onClick={() => setEditing(!editing)} className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">
             {editing ? 'Cancel' : 'Edit'}
           </button>
+          {canDelete && (
+            <button
+              onClick={async () => {
+                if (!confirm(`Delete ${customer.name}? This also deletes all their orders, estimates and measurements. This cannot be undone.`)) return
+                const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' })
+                if (res.ok) router.push('/customers')
+                else alert('Failed to delete customer')
+              }}
+              className="flex items-center gap-1 px-4 py-2 border border-border rounded-lg text-sm font-medium text-red hover:bg-muted"
+            >
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+          )}
         </div>
       </div>
 

@@ -2,75 +2,72 @@
 
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, Check, X, Trash2 } from 'lucide-react'
-import { useAuth, ROLE_LABELS, Role, Employee } from '@/lib/auth-context'
-import { useRouter } from 'next/navigation'
+import { ROLE_LABELS, Employee } from '@/lib/auth-context'
+import { EMPLOYEE_ROLES as ROLES, Role } from '@/lib/roles'
 
-const ROLES: Role[] = ['store_manager', 'production_manager', 'designer']
+const emptyForm = { name: '', role: 'store_manager', mobile: '', email: '', password: '' }
 
 export default function EmployeesPage() {
-  const { role } = useAuth()
-  const router = useRouter()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [showNew, setShowNew] = useState(false)
-  const [form, setForm] = useState({ name: '', role: 'store_manager', mobile: '', email: '' })
+  const [form, setForm] = useState(emptyForm)
+  const [formError, setFormError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', role: '', mobile: '', email: '' })
-
-  useEffect(() => {
-    if (role !== 'owner') {
-      router.replace('/')
-      return
-    }
-    load()
-  }, [role])
+  const [editForm, setEditForm] = useState(emptyForm)
 
   const load = () => {
     fetch('/api/employees').then(r => r.json()).then(setEmployees)
   }
 
-  const create = async () => {
-    if (!form.name) return
-    await fetch('/api/employees', {
-      method: 'POST',
+  useEffect(load, [])
+
+  const send = async (url: string, method: string, body?: object) => {
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: body ? JSON.stringify(body) : undefined,
     })
-    setShowNew(false)
-    setForm({ name: '', role: 'store_manager', mobile: '', email: '' })
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))).error || 'Something went wrong'
+      return err as string
+    }
     load()
+    return null
+  }
+
+  const create = async () => {
+    const err = await send('/api/employees', 'POST', form)
+    if (err) return setFormError(err)
+    setShowNew(false)
+    setFormError('')
+    setForm(emptyForm)
   }
 
   const startEdit = (emp: Employee) => {
     setEditingId(emp.id)
-    setEditForm({ name: emp.name, role: emp.role, mobile: emp.mobile || '', email: emp.email || '' })
+    setEditForm({ name: emp.name, role: emp.role, mobile: emp.mobile || '', email: emp.email || '', password: '' })
   }
 
   const saveEdit = async () => {
     if (!editingId || !editForm.name) return
-    await fetch(`/api/employees/${editingId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editForm),
-    })
+    const { password, ...rest } = editForm
+    const err = await send(`/api/employees/${editingId}`, 'PUT', password ? editForm : rest)
+    if (err) return alert(err)
     setEditingId(null)
-    load()
   }
 
   const toggleActive = async (emp: Employee) => {
-    await fetch(`/api/employees/${emp.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active: !emp.active }),
-    })
-    load()
+    const err = await send(`/api/employees/${emp.id}`, 'PUT', { active: !emp.active })
+    if (err) alert(err)
   }
 
-  const deleteEmployee = async (id: string) => {
-    await fetch(`/api/employees/${id}`, { method: 'DELETE' })
-    load()
+  const deleteEmployee = async (emp: Employee) => {
+    if (!confirm(`Delete ${emp.name}? They will no longer be able to log in.`)) return
+    const err = await send(`/api/employees/${emp.id}`, 'DELETE')
+    if (err) alert(err)
   }
 
-  if (role !== 'owner') return null
+  const roleLabel = (r: string) => ROLE_LABELS[r as Role] || r
 
   return (
     <div>
@@ -98,15 +95,18 @@ export default function EmployeesPage() {
             </select>
             <input type="text" placeholder="Mobile (optional)" value={form.mobile} onChange={e => setForm(p => ({ ...p, mobile: e.target.value }))} className="px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20" />
             <input type="email" placeholder="Email (optional)" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className="px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20" />
+            <input type="password" autoComplete="new-password" placeholder="Login password * (min 6 characters)" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} className="px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20 sm:col-span-2" />
           </div>
+          <p className="text-xs text-muted-foreground">The employee signs in with their <strong>name</strong> or <strong>mobile number</strong> and this password.</p>
+          {formError && <p className="text-xs text-red">{formError}</p>}
           <div className="text-xs text-muted-foreground space-y-1">
             <p><strong>Store Manager:</strong> Access to everything except creating new todos</p>
             <p><strong>Production Manager:</strong> Only orders tab, no customer contact info</p>
             <p><strong>Designer / Merchandiser:</strong> Only styles tab</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={create} disabled={!form.name} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">Add</button>
-            <button onClick={() => setShowNew(false)} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
+            <button onClick={create} disabled={!form.name || form.password.length < 6} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">Add</button>
+            <button onClick={() => { setShowNew(false); setFormError('') }} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>
       )}
@@ -124,7 +124,7 @@ export default function EmployeesPage() {
                 <th className="text-left px-4 py-3 font-medium">Role</th>
                 <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Mobile</th>
                 <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Email</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
+                <th className="text-left px-4 py-3 font-medium">{editingId ? 'Password' : 'Status'}</th>
                 <th className="text-right px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
@@ -135,13 +135,19 @@ export default function EmployeesPage() {
                     <>
                       <td className="px-4 py-2"><input type="text" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} className="w-full px-2 py-1 text-sm border border-border rounded" /></td>
                       <td className="px-4 py-2">
-                        <select value={editForm.role} onChange={e => setEditForm(p => ({ ...p, role: e.target.value }))} className="w-full px-2 py-1 text-sm border border-border rounded bg-background">
-                          {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                        </select>
+                        {emp.role === 'owner' ? (
+                          <span className="text-xs">{roleLabel(emp.role)}</span>
+                        ) : (
+                          <select value={editForm.role} onChange={e => setEditForm(p => ({ ...p, role: e.target.value }))} className="w-full px-2 py-1 text-sm border border-border rounded bg-background">
+                            {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-2 hidden sm:table-cell"><input type="text" value={editForm.mobile} onChange={e => setEditForm(p => ({ ...p, mobile: e.target.value }))} className="w-full px-2 py-1 text-sm border border-border rounded" /></td>
                       <td className="px-4 py-2 hidden sm:table-cell"><input type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} className="w-full px-2 py-1 text-sm border border-border rounded" /></td>
-                      <td className="px-4 py-2"></td>
+                      <td className="px-4 py-2">
+                        <input type="password" autoComplete="new-password" placeholder="New password (optional)" value={editForm.password} onChange={e => setEditForm(p => ({ ...p, password: e.target.value }))} className="w-full min-w-36 px-2 py-1 text-sm border border-border rounded" />
+                      </td>
                       <td className="px-4 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={saveEdit} className="p-1 text-green hover:bg-muted rounded"><Check className="w-4 h-4" /></button>
@@ -153,19 +159,22 @@ export default function EmployeesPage() {
                     <>
                       <td className="px-4 py-3 font-medium">{emp.name}</td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 text-xs rounded-full bg-muted">{ROLE_LABELS[emp.role as keyof typeof ROLE_LABELS] || emp.role}</span>
+                        <span className="px-2 py-0.5 text-xs rounded-full bg-muted">{roleLabel(emp.role)}</span>
+                        {!emp.hasPassword && <span className="ml-1 text-[10px] text-red">no password</span>}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{emp.mobile || '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{emp.email || '—'}</td>
                       <td className="px-4 py-3">
-                        <button onClick={() => toggleActive(emp)} className={`px-2 py-0.5 text-xs rounded-full ${emp.active ? 'bg-green/10 text-green' : 'bg-muted text-muted-foreground'}`}>
+                        <button disabled={emp.role === 'owner'} onClick={() => toggleActive(emp)} className={`px-2 py-0.5 text-xs rounded-full ${emp.active ? 'bg-green/10 text-green' : 'bg-muted text-muted-foreground'}`}>
                           {emp.active ? 'Active' : 'Inactive'}
                         </button>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => startEdit(emp)} className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded"><Pencil className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => deleteEmployee(emp.id)} className="p-1 text-muted-foreground hover:text-red hover:bg-muted rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                          {emp.role !== 'owner' && (
+                            <button onClick={() => deleteEmployee(emp)} className="p-1 text-muted-foreground hover:text-red hover:bg-muted rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                          )}
                         </div>
                       </td>
                     </>

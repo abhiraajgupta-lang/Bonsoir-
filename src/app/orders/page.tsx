@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Search } from 'lucide-react'
+import { Search, Trash2 } from 'lucide-react'
 import { formatCurrency, formatDate, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
@@ -21,16 +21,25 @@ interface Order {
 }
 
 export default function OrdersPage() {
-  const { canSeeCustomerContact } = useAuth()
+  const { canSeeCustomerContact, canDelete } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [filter, setFilter] = useState('All')
   const [search, setSearch] = useState('')
 
-  useEffect(() => {
+  const load = () => {
     fetch(`/api/orders?status=${filter}`)
       .then(r => r.json())
       .then(setOrders)
-  }, [filter])
+  }
+
+  useEffect(load, [filter])
+
+  const deleteOrder = async (order: Order) => {
+    if (!confirm(`Delete Order #${order.orderNumber} for ${order.customer.name}? All its jobs, trials and payments will be removed. This cannot be undone.`)) return
+    const res = await fetch(`/api/orders/${order.id}`, { method: 'DELETE' })
+    if (res.ok) load()
+    else alert('Failed to delete order')
+  }
 
   const filtered = search
     ? orders.filter(o =>
@@ -99,6 +108,7 @@ export default function OrdersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3">Amount</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden lg:table-cell">Status</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden lg:table-cell">Risk</th>
+                {canDelete && <th className="px-4 py-3 w-10"></th>}
               </tr>
             </thead>
             <tbody>
@@ -167,6 +177,13 @@ export default function OrdersPage() {
                         <span className={`inline-block w-2.5 h-2.5 rounded-full ${riskDot[worstRisk]}`} />
                       )}
                     </td>
+                    {canDelete && (
+                      <td className="px-4 py-3">
+                        <button onClick={() => deleteOrder(order)} title="Delete order" className="text-muted-foreground hover:text-red p-1">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}

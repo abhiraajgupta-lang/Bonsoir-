@@ -2,9 +2,11 @@
 
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Printer, ArrowRight, Plus, Trash2, Search, Percent, IndianRupee } from 'lucide-react'
+import { ArrowLeft, Printer, ArrowRight, Plus, Trash2, Percent, IndianRupee } from 'lucide-react'
 import { formatCurrency, formatDate, PAYMENT_METHODS, ORDER_CHANNELS } from '@/lib/constants'
 import { useRouter } from 'next/navigation'
+import CustomerPicker from '@/components/CustomerPicker'
+import { useAuth } from '@/lib/auth-context'
 
 interface Customer {
   id: string
@@ -29,6 +31,8 @@ interface GarmentItem {
   amount: number
   styleId?: string
   pieces?: number
+  customerId?: string
+  customerName?: string
 }
 
 interface EstimateData {
@@ -59,12 +63,14 @@ interface EstimateData {
 export default function EstimateDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const { canDelete } = useAuth()
   const [estimate, setEstimate] = useState<EstimateData | null>(null)
   const [editing, setEditing] = useState(false)
   const [converting, setConverting] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const [garments, setGarments] = useState<GarmentItem[]>([])
+  const [editCustomer, setEditCustomer] = useState<Customer | null>(null)
   const [trialDate, setTrialDate] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
   const [notes, setNotes] = useState('')
@@ -97,6 +103,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
     let items: GarmentItem[] = []
     try { items = data.items ? JSON.parse(data.items) : [] } catch { /* empty */ }
     setGarments(items.length > 0 ? items : [{ garment: '', amount: 0 }])
+    setEditCustomer(data.customer)
     setTrialDate(data.trialDate ? data.trialDate.slice(0, 10) : '')
     setDeliveryDate(data.deliveryDate ? data.deliveryDate.slice(0, 10) : '')
     setNotes(data.notes || '')
@@ -153,9 +160,9 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerId: estimate.customerId,
-          customerName: estimate.customerName,
-          mobile: estimate.mobile,
+          customerId: editCustomer?.id ?? estimate.customerId,
+          customerName: editCustomer?.name ?? estimate.customerName,
+          mobile: editCustomer?.mobile ?? estimate.mobile,
           trialDate: trialDate || null,
           deliveryDate: deliveryDate || null,
           items: garments.filter(g => g.garment),
@@ -173,6 +180,13 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
     } finally {
       setSaving(false)
     }
+  }
+
+  const deleteEstimate = async () => {
+    if (!confirm(`Delete estimate EST-${String(estimate.estimateNumber).padStart(4, '0')}? This cannot be undone.`)) return
+    const res = await fetch(`/api/estimates/${id}`, { method: 'DELETE' })
+    if (res.ok) router.push('/estimates')
+    else alert((await res.json()).error || 'Failed to delete')
   }
 
   const convertToOrder = async () => {
@@ -306,11 +320,31 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
               View Order <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           )}
+          {canDelete && (
+            <button onClick={deleteEstimate} className="flex items-center gap-1 px-3 py-1.5 border border-border rounded-lg text-xs font-medium text-red hover:bg-red/10">
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
         </div>
       </div>
 
       {editing ? (
         <div className="bg-card border border-border rounded-xl p-5 space-y-5">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground uppercase mb-2">Customer</label>
+            {editCustomer ? (
+              <div className="bg-muted rounded-lg p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">{editCustomer.name}</p>
+                  <p className="text-xs text-muted-foreground">{editCustomer.customerId} · {editCustomer.mobile}</p>
+                </div>
+                <button onClick={() => setEditCustomer(null)} className="text-xs text-red hover:underline">Change</button>
+              </div>
+            ) : (
+              <CustomerPicker onSelect={setEditCustomer} />
+            )}
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-muted-foreground uppercase">Garments</label>
@@ -318,9 +352,9 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
                 <Plus className="w-3 h-3" /> Add Garment
               </button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {garments.map((g, i) => (
-                <div key={i} className="space-y-1">
+                <div key={i} className="space-y-2 bg-muted/30 rounded-lg p-3">
                   <div className="flex gap-2 items-center">
                     <div className="flex-1 relative">
                       <input
@@ -355,6 +389,21 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
                     </div>
                     {garments.length > 1 && (
                       <button onClick={() => setGarments(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-red p-1"><Trash2 className="w-4 h-4" /></button>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Customer for this garment</label>
+                    {g.customerName ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium bg-card border border-border rounded px-2 py-1">{g.customerName}</span>
+                        <button onClick={() => setGarments(prev => prev.map((item, idx) => idx === i ? { ...item, customerId: undefined, customerName: undefined } : item))} className="text-xs text-muted-foreground hover:text-red">Reset to main</button>
+                      </div>
+                    ) : (
+                      <CustomerPicker
+                        compact
+                        placeholder={editCustomer ? `Default: ${editCustomer.name} — search to change` : 'Search customer for this garment...'}
+                        onSelect={c => setGarments(prev => prev.map((item, idx) => idx === i ? { ...item, customerId: c.id, customerName: c.name } : item))}
+                      />
                     )}
                   </div>
                 </div>
@@ -420,7 +469,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           <div className="flex gap-2">
-            <button onClick={saveEstimate} disabled={saving || !!advanceError} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving...' : 'Save Changes'}</button>
+            <button onClick={saveEstimate} disabled={saving || !!advanceError || !editCustomer} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving...' : 'Save Changes'}</button>
             <button onClick={() => { setEditing(false); populateForm(estimate) }} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>
@@ -454,7 +503,10 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
             <div className="space-y-2">
               {items.map((item, i) => (
                 <div key={i} className="flex justify-between text-sm py-1.5 border-b border-border last:border-0">
-                  <span>{item.garment}</span>
+                  <span>
+                    {item.garment}
+                    {item.customerName && <span className="text-xs text-muted-foreground ml-2">for {item.customerName}</span>}
+                  </span>
                   <span className="font-medium">{formatCurrency(item.amount)}</span>
                 </div>
               ))}

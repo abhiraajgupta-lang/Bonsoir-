@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { Plus, FileText, ArrowRight, Trash2, Search, Printer, Percent, IndianRupee, Eye, Edit2 } from 'lucide-react'
+import { Plus, FileText, ArrowRight, Trash2, Printer, Percent, IndianRupee } from 'lucide-react'
 import { formatCurrency, formatDate, PAYMENT_METHODS, ORDER_CHANNELS } from '@/lib/constants'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import CustomerPicker from '@/components/CustomerPicker'
+import { useAuth } from '@/lib/auth-context'
 
 interface Customer {
   id: string
@@ -62,10 +63,8 @@ export default function EstimatesPage() {
   const [showNew, setShowNew] = useState(false)
   const [converting, setConverting] = useState<string | null>(null)
 
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customerResults, setCustomerResults] = useState<Customer[]>([])
+  const { canDelete } = useAuth()
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [allCustomers, setAllCustomers] = useState<Customer[]>([])
 
   const [garments, setGarments] = useState<GarmentItem[]>([{ garment: '', amount: 0 }])
   const [trialDate, setTrialDate] = useState('')
@@ -85,10 +84,6 @@ export default function EstimatesPage() {
   const [styleResults, setStyleResults] = useState<StyleOption[]>([])
   const [activeGarmentIdx, setActiveGarmentIdx] = useState<number | null>(null)
 
-  const [garmentCustomerSearch, setGarmentCustomerSearch] = useState('')
-  const [garmentCustomerResults, setGarmentCustomerResults] = useState<Customer[]>([])
-  const [activeGarmentCustomerIdx, setActiveGarmentCustomerIdx] = useState<number | null>(null)
-
   const totalAmount = garments.reduce((sum, g) => sum + (g.amount || 0), 0)
   const discountAmount = discountType === 'percentage'
     ? Math.round(totalAmount * discountValue / 100)
@@ -103,30 +98,6 @@ export default function EstimatesPage() {
   }
 
   useEffect(() => { load() }, [])
-
-  useEffect(() => {
-    fetch('/api/customers?search=').then(r => r.json()).then(setAllCustomers)
-  }, [])
-
-  useEffect(() => {
-    if (customerSearch.length >= 2) {
-      fetch(`/api/customers?search=${encodeURIComponent(customerSearch)}`)
-        .then(r => r.json())
-        .then(setCustomerResults)
-    } else {
-      setCustomerResults([])
-    }
-  }, [customerSearch])
-
-  useEffect(() => {
-    if (garmentCustomerSearch.length >= 2) {
-      fetch(`/api/customers?search=${encodeURIComponent(garmentCustomerSearch)}`)
-        .then(r => r.json())
-        .then(setGarmentCustomerResults)
-    } else {
-      setGarmentCustomerResults([])
-    }
-  }, [garmentCustomerSearch])
 
   useEffect(() => {
     if (styleSearch.length >= 1) {
@@ -148,7 +119,6 @@ export default function EstimatesPage() {
 
   const resetForm = () => {
     setSelectedCustomer(null)
-    setCustomerSearch('')
     setGarments([{ garment: '', amount: 0 }])
     setTrialDate('')
     setDeliveryDate('')
@@ -179,9 +149,13 @@ export default function EstimatesPage() {
     setGarments(prev => prev.map((item, i) =>
       i === idx ? { ...item, customerId: customer.id, customerName: customer.name } : item
     ))
-    setGarmentCustomerSearch('')
-    setGarmentCustomerResults([])
-    setActiveGarmentCustomerIdx(null)
+  }
+
+  const deleteEstimate = async (e: Estimate) => {
+    if (!confirm(`Delete estimate EST-${String(e.estimateNumber).padStart(4, '0')} for ${e.customerName}? This cannot be undone.`)) return
+    const res = await fetch(`/api/estimates/${e.id}`, { method: 'DELETE' })
+    if (res.ok) load()
+    else alert((await res.json()).error || 'Failed to delete')
   }
 
   const createEstimate = async () => {
@@ -348,30 +322,7 @@ export default function EstimatesPage() {
                 <button onClick={() => setSelectedCustomer(null)} className="text-xs text-red hover:underline">Change</button>
               </div>
             ) : (
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search customer by name or mobile..."
-                  value={customerSearch}
-                  onChange={e => setCustomerSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
-                />
-                {customerResults.length > 0 && (
-                  <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden max-h-48 overflow-y-auto">
-                    {customerResults.map(c => (
-                      <button
-                        key={c.id}
-                        onClick={() => { setSelectedCustomer(c); setCustomerSearch(''); setCustomerResults([]) }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-muted text-sm border-b border-border last:border-0"
-                      >
-                        <span className="font-medium">{c.name}</span>
-                        <span className="text-muted-foreground ml-2">{c.mobile}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <CustomerPicker onSelect={setSelectedCustomer} />
             )}
           </div>
 
@@ -458,33 +409,11 @@ export default function EstimatesPage() {
                         <button onClick={() => setGarments(prev => prev.map((item, idx) => idx === i ? { ...item, customerId: undefined, customerName: undefined } : item))} className="text-xs text-muted-foreground hover:text-red">Reset to main</button>
                       </div>
                     ) : (
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder={selectedCustomer ? `Default: ${selectedCustomer.name}` : 'Select main customer first'}
-                          value={activeGarmentCustomerIdx === i ? garmentCustomerSearch : ''}
-                          onFocus={() => setActiveGarmentCustomerIdx(i)}
-                          onChange={e => {
-                            setGarmentCustomerSearch(e.target.value)
-                            setActiveGarmentCustomerIdx(i)
-                          }}
-                          className="w-full px-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
-                        />
-                        {activeGarmentCustomerIdx === i && garmentCustomerResults.length > 0 && (
-                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden max-h-36 overflow-y-auto">
-                            {garmentCustomerResults.map(c => (
-                              <button
-                                key={c.id}
-                                onClick={() => selectGarmentCustomer(c, i)}
-                                className="w-full text-left px-3 py-2 hover:bg-muted text-xs border-b border-border last:border-0"
-                              >
-                                <span className="font-medium">{c.name}</span>
-                                <span className="text-muted-foreground ml-2">{c.mobile}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      <CustomerPicker
+                        compact
+                        placeholder={selectedCustomer ? `Default: ${selectedCustomer.name} — search to change` : 'Search customer for this garment...'}
+                        onSelect={c => selectGarmentCustomer(c, i)}
+                      />
                     )}
                   </div>
                   {g.pieces && g.pieces > 1 && (
@@ -651,6 +580,14 @@ export default function EstimatesPage() {
                       className="text-xs font-medium text-green hover:underline"
                     >
                       View Order →
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={() => deleteEstimate(e)}
+                      className="ml-auto flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-red"
+                    >
+                      <Trash2 className="w-3 h-3" /> Delete
                     </button>
                   )}
                 </div>

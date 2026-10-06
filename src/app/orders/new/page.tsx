@@ -31,9 +31,10 @@ interface MeasurementSet {
 
 interface Style {
   id: string
-  styleCode: string
-  name: string
+  styleCode: string | null
+  name: string | null
   category: string
+  pieces: number
   price: number
 }
 
@@ -137,7 +138,7 @@ export default function NewOrderPage() {
 
   const selectStyle = (idx: number, style: Style) => {
     updateJob(idx, 'styleId', style.id)
-    updateJob(idx, 'styleName', `${style.styleCode} - ${style.name}`)
+    updateJob(idx, 'styleName', [style.styleCode, style.name].filter(Boolean).join(' - ') || style.category)
     updateJob(idx, 'garmentType', style.category)
     updateJob(idx, 'amount', style.price)
     setStyleSearch('')
@@ -188,8 +189,8 @@ export default function NewOrderPage() {
 
   const filteredStyles = styleSearch
     ? styles.filter(s =>
-        s.name.toLowerCase().includes(styleSearch.toLowerCase()) ||
-        s.styleCode.toLowerCase().includes(styleSearch.toLowerCase())
+        (s.name ?? '').toLowerCase().includes(styleSearch.toLowerCase()) ||
+        (s.styleCode ?? '').toLowerCase().includes(styleSearch.toLowerCase())
       ).slice(0, 8)
     : []
 
@@ -417,7 +418,8 @@ export default function NewOrderPage() {
                               onClick={() => selectStyle(idx, s)}
                               className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b border-border last:border-0"
                             >
-                              <span className="font-medium">{s.styleCode}</span> — {s.name}
+                              <span className="font-medium">{s.styleCode || s.category}</span>{s.name && ` — ${s.name}`}
+                              {s.pieces > 1 && <span className="text-xs text-muted-foreground ml-1">({s.pieces}-pc)</span>}
                               <span className="text-muted-foreground ml-2">{formatCurrency(s.price)}</span>
                             </button>
                           ))}

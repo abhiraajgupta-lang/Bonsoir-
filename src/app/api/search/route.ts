@@ -9,9 +9,9 @@ export async function GET(req: NextRequest) {
     prisma.customer.findMany({
       where: {
         OR: [
-          { name: { contains: q } },
-          { mobile: { contains: q } },
-          { customerId: { contains: q } },
+          { name: { contains: q, mode: 'insensitive' as const } },
+          { mobile: { contains: q, mode: 'insensitive' as const } },
+          { customerId: { contains: q, mode: 'insensitive' as const } },
         ],
       },
       take: 5,
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     prisma.job.findMany({
       where: {
         OR: [
-          { jobNumber: { contains: q } },
+          { jobNumber: { contains: q, mode: 'insensitive' as const } },
         ],
       },
       include: { order: { include: { customer: true } } },
@@ -35,8 +35,8 @@ export async function GET(req: NextRequest) {
     prisma.style.findMany({
       where: {
         OR: [
-          { styleCode: { contains: q } },
-          { name: { contains: q } },
+          { styleCode: { contains: q, mode: 'insensitive' as const } },
+          { name: { contains: q, mode: 'insensitive' as const } },
         ],
       },
       take: 5,
@@ -44,8 +44,8 @@ export async function GET(req: NextRequest) {
     prisma.estimate.findMany({
       where: {
         OR: [
-          { customerName: { contains: q } },
-          { mobile: { contains: q } },
+          { customerName: { contains: q, mode: 'insensitive' as const } },
+          { mobile: { contains: q, mode: 'insensitive' as const } },
           ...(isNaN(Number(q)) ? [] : [{ estimateNumber: Number(q) }]),
         ],
       },
@@ -54,9 +54,9 @@ export async function GET(req: NextRequest) {
     prisma.footfall.findMany({
       where: {
         OR: [
-          { customerName: { contains: q } },
-          { mobile: { contains: q } },
-          { notes: { contains: q } },
+          { customerName: { contains: q, mode: 'insensitive' as const } },
+          { mobile: { contains: q, mode: 'insensitive' as const } },
+          { notes: { contains: q, mode: 'insensitive' as const } },
         ],
       },
       take: 5,
@@ -64,9 +64,9 @@ export async function GET(req: NextRequest) {
     prisma.todoItem.findMany({
       where: {
         OR: [
-          { title: { contains: q } },
-          { description: { contains: q } },
-          { assignedTo: { contains: q } },
+          { title: { contains: q, mode: 'insensitive' as const } },
+          { description: { contains: q, mode: 'insensitive' as const } },
+          { assignedTo: { contains: q, mode: 'insensitive' as const } },
         ],
       },
       take: 5,

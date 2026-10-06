@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { createJobsForItem, getStylePieces } from '@/lib/jobs'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -21,16 +22,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Estimate must have a linked customer' }, { status: 400 })
   }
 
-  const latestMeasurement = await prisma.measurementSet.findFirst({
-    where: { customerId: estimate.customerId },
-    orderBy: { version: 'desc' },
-  })
-
-  let items: Array<{ garment: string; amount: number; styleId?: string; pieces?: number }> = []
+  let items: Array<{ garment: string; amount: number; styleId?: string; pieces?: number; customerId?: string; customerName?: string }> = []
   try {
     items = estimate.items ? JSON.parse(estimate.items) : []
   } catch {
     items = []
+  }
+
+  const measurementFor = new Map<string, string | null>()
+  for (const cid of new Set([estimate.customerId, ...items.map(i => i.customerId).filter((c): c is string => !!c)])) {
+    const m = await prisma.measurementSet.findFirst({ where: { customerId: cid }, orderBy: { version: 'desc' } })
+    measurementFor.set(cid, m?.id ?? null)
   }
 
   const counter = await prisma.counter.upsert({
@@ -41,68 +43,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const orderNumber = counter.value
 
-  const order = await prisma.order.create({
-    data: {
-      orderNumber,
-      customerId: estimate.customerId,
-      deliveryDate: estimate.deliveryDate || new Date(),
-      channel: (estimate as Record<string, unknown>).channel as string || 'In-Store',
-      totalAmount: estimate.totalAmount,
-      discountType: estimate.discountType,
-      discountValue: estimate.discountValue,
-      discountAmount: estimate.discountAmount,
-      netPayable: estimate.netPayable,
-      advancePaid: estimate.advanceAmount,
-      balanceDue: estimate.balancePayment,
-      estimateId: estimate.id,
-      notes: estimate.notes,
-    },
-  })
+  const order = await prisma.$transaction(async tx => {
+    const order = await tx.order.create({
+      data: {
+        orderNumber,
+        customerId: estimate.customerId!,
+        deliveryDate: estimate.deliveryDate || new Date(),
+        channel: estimate.channel || 'In-Store',
+        totalAmount: estimate.totalAmount,
+        discountType: estimate.discountType,
+        discountValue: estimate.discountValue,
+        discountAmount: estimate.discountAmount,
+        netPayable: estimate.netPayable,
+        advancePaid: estimate.advanceAmount,
+        balanceDue: estimate.balancePayment,
+        estimateId: estimate.id,
+        notes: estimate.notes,
+      },
+    })
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
-    const piecesCount = item.pieces || 1
-
-    if (piecesCount > 1) {
-      const perPieceAmount = Math.round((item.amount || 0) / piecesCount)
-      for (let p = 0; p < piecesCount; p++) {
-        const pieceJobNumber = `${orderNumber}-${String(i + 1).padStart(2, '0')}${String.fromCharCode(65 + p)}`
-        const pieceName = p === 0 ? 'Blazer/Top' : p === 1 ? 'Trouser/Bottom' : `Piece ${p + 1}`
-        const job = await prisma.job.create({
-          data: {
-            jobNumber: pieceJobNumber,
-            orderId: order.id,
-            styleId: item.styleId || null,
-            garmentType: `${item.garment} - ${pieceName}`,
-            amount: perPieceAmount,
-            measurementSetId: latestMeasurement?.id || null,
-            deliveryDate: estimate.deliveryDate,
-            currentStage: 'Order Placed',
-          },
-        })
-        await prisma.stageHistory.create({
-          data: { jobId: job.id, stage: 'Order Placed' },
-        })
-      }
-    } else {
-      const jobNumber = `${orderNumber}-${String(i + 1).padStart(2, '0')}`
-      const job = await prisma.job.create({
-        data: {
-          jobNumber,
-          orderId: order.id,
-          styleId: item.styleId || null,
-          garmentType: item.garment,
-          amount: item.amount || 0,
-          measurementSetId: latestMeasurement?.id || null,
-          deliveryDate: estimate.deliveryDate,
-          currentStage: 'Order Placed',
-        },
-      })
-      await prisma.stageHistory.create({
-        data: { jobId: job.id, stage: 'Order Placed' },
+    const livePieces = await getStylePieces(tx, items.map(i => i.styleId))
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      const forOther = item.customerId && item.customerId !== estimate.customerId
+      await createJobsForItem(tx, {
+        orderId: order.id,
+        baseJobNumber: `${orderNumber}-${String(i + 1).padStart(2, '0')}`,
+        garmentType: item.garment,
+        amount: item.amount || 0,
+        styleId: item.styleId,
+        pieces: (item.styleId && livePieces.get(item.styleId)) || item.pieces || 1,
+        measurementSetId: measurementFor.get(item.customerId || estimate.customerId!) ?? null,
+        deliveryDate: estimate.deliveryDate,
+        jobNotes: forOther ? `For: ${item.customerName}` : null,
       })
     }
-  }
+    return order
+  }, { timeout: 20000 })
 
   if (estimate.advanceAmount > 0) {
     await prisma.payment.create({

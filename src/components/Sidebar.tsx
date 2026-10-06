@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -19,7 +19,7 @@ import {
   UsersRound,
   LogOut,
 } from 'lucide-react'
-import { useAuth, ROLE_LABELS, Employee } from '@/lib/auth-context'
+import { useAuth, ROLE_LABELS } from '@/lib/auth-context'
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -37,21 +37,9 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
-  const { currentEmployee, setCurrentEmployee, hasAccess, role } = useAuth()
-  const [showPicker, setShowPicker] = useState(false)
-  const [employees, setEmployees] = useState<Employee[]>([])
+  const { currentEmployee, hasAccess, role, logout } = useAuth()
 
-  useEffect(() => {
-    if (showPicker) {
-      fetch('/api/employees').then(r => r.json()).then(setEmployees)
-    }
-  }, [showPicker])
-
-  const filteredNav = navItems.filter(item => {
-    if (!currentEmployee) return true
-    if (item.href === '/employees') return role === 'owner'
-    return hasAccess(item.href)
-  })
+  const filteredNav = navItems.filter(item => hasAccess(item.href))
 
   return (
     <>
@@ -104,54 +92,16 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="px-3 py-3 border-t border-white/10">
-          <button
-            onClick={() => setShowPicker(!showPicker)}
-            className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/8 transition-colors"
-          >
-            <UserCircle className="w-4.5 h-4.5 shrink-0" />
-            <div className="flex-1 text-left truncate">
-              {currentEmployee ? (
-                <>
-                  <p className="text-xs font-medium text-white truncate">{currentEmployee.name}</p>
-                  <p className="text-[10px] text-white/50">{ROLE_LABELS[role] || role}</p>
-                </>
-              ) : (
-                <p className="text-xs">Owner (no login)</p>
-              )}
-            </div>
+        <div className="px-3 py-3 border-t border-white/10 flex items-center gap-2">
+          <UserCircle className="w-5 h-5 shrink-0 text-white/70" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-white truncate">{currentEmployee?.name}</p>
+            <p className="text-[10px] text-white/50">{ROLE_LABELS[role]}</p>
+          </div>
+          <button onClick={logout} title="Log out" className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10">
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
-
-        {showPicker && (
-          <div className="absolute bottom-16 left-2 right-2 bg-card text-foreground rounded-xl border border-border shadow-xl max-h-72 overflow-y-auto z-50">
-            <div className="p-3 border-b border-border">
-              <p className="text-xs font-semibold">Switch User</p>
-            </div>
-            <div className="p-1">
-              <button
-                onClick={() => { setCurrentEmployee(null); setShowPicker(false) }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors ${!currentEmployee ? 'bg-muted font-medium' : ''}`}
-              >
-                <p className="font-medium">Owner</p>
-                <p className="text-xs text-muted-foreground">Full access</p>
-              </button>
-              {employees.filter(e => e.active).map(emp => (
-                <button
-                  key={emp.id}
-                  onClick={() => { setCurrentEmployee(emp); setShowPicker(false) }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors ${currentEmployee?.id === emp.id ? 'bg-muted font-medium' : ''}`}
-                >
-                  <p className="font-medium">{emp.name}</p>
-                  <p className="text-xs text-muted-foreground">{ROLE_LABELS[emp.role as keyof typeof ROLE_LABELS] || emp.role}</p>
-                </button>
-              ))}
-              {employees.filter(e => e.active).length === 0 && (
-                <p className="px-3 py-2 text-xs text-muted-foreground">No employees added yet. Go to Employees tab to add.</p>
-              )}
-            </div>
-          </div>
-        )}
       </aside>
     </>
   )
