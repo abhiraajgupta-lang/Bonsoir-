@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Plus, CheckCircle2, Circle, Clock, AlertTriangle, MessageSquare, Send } from 'lucide-react'
+import { useState } from 'react'
+import useSWR, { useSWRConfig } from 'swr'
+import { Plus, CheckCircle2, Circle, Clock, AlertTriangle, MessageSquare, Send, User } from 'lucide-react'
 import { formatDate, formatDateTime } from '@/lib/constants'
 import { useAuth, Employee } from '@/lib/auth-context'
+import { send, useBusy } from '@/lib/api'
 
 interface TodoComment {
   id: string
@@ -18,6 +20,7 @@ interface TodoItem {
   title: string
   description: string | null
   assignedTo: string | null
+  assignedToId: string | null
   deadline: string | null
   status: string
   createdAt: string
@@ -39,65 +42,47 @@ const statusColors: Record<string, string> = {
 }
 
 export default function TodosPage() {
-  const { canCreateTodo, currentEmployee } = useAuth()
-  const [todos, setTodos] = useState<TodoItem[]>([])
+  const { canCreateTodo, isOwner } = useAuth()
+  const { mutate: globalMutate } = useSWRConfig()
+  const { data: todos = [], mutate, isLoading } = useSWR<TodoItem[]>('/api/todos', { refreshInterval: 10000 })
+  const { data: allEmployees = [] } = useSWR<Employee[]>(isOwner ? '/api/employees' : null)
+  const employees = allEmployees.filter(e => e.active)
   const [showNew, setShowNew] = useState(false)
   const [filter, setFilter] = useState('All')
-  const [form, setForm] = useState({ title: '', description: '', assignedTo: '', deadline: '' })
+  const [form, setForm] = useState({ title: '', description: '', assignedToId: '', deadline: '' })
   const [expandedTodo, setExpandedTodo] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
-  const [employees, setEmployees] = useState<Employee[]>([])
+  const [creating, runCreate] = useBusy()
+  const [commenting, runComment] = useBusy()
 
-  const load = () => {
-    fetch('/api/todos').then(r => r.json()).then(setTodos)
+  const refresh = () => {
+    mutate()
+    globalMutate('/api/todos/pending')
   }
 
-  useEffect(() => {
-    load()
-    fetch('/api/employees').then(r => r.json()).then((emps: Employee[]) => setEmployees(emps.filter(e => e.active)))
-  }, [])
-
-  const create = async () => {
-    if (!form.title) return
-    await fetch('/api/todos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
-    })
+  const create = () => runCreate(async () => {
+    if (!form.title.trim()) return
+    const res = await send('/api/todos', 'POST', form)
+    if (!res.ok) return alert(res.error)
     setShowNew(false)
-    setForm({ title: '', description: '', assignedTo: '', deadline: '' })
-    load()
+    setForm({ title: '', description: '', assignedToId: '', deadline: '' })
+    refresh()
+  })
+
+  const updateTodo = async (id: string, patch: Partial<TodoItem>) => {
+    mutate(todos.map(t => (t.id === id ? { ...t, ...patch } : t)), { revalidate: false })
+    const res = await send(`/api/todos/${id}`, 'PUT', patch)
+    if (!res.ok) alert(res.error)
+    refresh()
   }
 
-  const updateStatus = async (id: string, status: string) => {
-    await fetch(`/api/todos/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    })
-    load()
-  }
-
-  const updateAssignee = async (id: string, assignedTo: string) => {
-    await fetch(`/api/todos/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignedTo }),
-    })
-    load()
-  }
-
-  const addComment = async (todoId: string) => {
+  const addComment = (todoId: string) => runComment(async () => {
     if (!commentText.trim()) return
-    const author = currentEmployee?.name || 'Owner'
-    await fetch(`/api/todos/${todoId}/comments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: commentText, author }),
-    })
+    const res = await send(`/api/todos/${todoId}/comments`, 'POST', { content: commentText })
+    if (!res.ok) return alert(res.error)
     setCommentText('')
-    load()
-  }
+    mutate()
+  })
 
   const filtered = filter === 'All' ? todos : todos.filter(t => t.status === filter)
   const now = new Date()
@@ -109,15 +94,17 @@ export default function TodosPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold">To-Do List</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{todos.length} task{todos.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-semibold">{isOwner ? 'To-Do List' : 'My Tasks'}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {todos.length} task{todos.length !== 1 ? 's' : ''}{!isOwner && ' assigned to you'} · updates automatically
+          </p>
         </div>
         {canCreateTodo && (
           <button
             onClick={() => setShowNew(!showNew)}
-            className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-accent/90"
+            className="shrink-0 flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-accent/90"
           >
             <Plus className="w-4 h-4" />
             New Task
@@ -160,13 +147,13 @@ export default function TodosPage() {
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Assign To</label>
               <select
-                value={form.assignedTo}
-                onChange={e => setForm(p => ({ ...p, assignedTo: e.target.value }))}
+                value={form.assignedToId}
+                onChange={e => setForm(p => ({ ...p, assignedToId: e.target.value }))}
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
               >
                 <option value="">Unassigned</option>
                 {employees.map(emp => (
-                  <option key={emp.id} value={emp.name}>{emp.name}</option>
+                  <option key={emp.id} value={emp.id}>{emp.name}</option>
                 ))}
               </select>
             </div>
@@ -176,7 +163,7 @@ export default function TodosPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={create} disabled={!form.title} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">Create</button>
+            <button onClick={create} disabled={!form.title.trim() || creating} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{creating ? 'Creating…' : 'Create'}</button>
             <button onClick={() => setShowNew(false)} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>
@@ -184,7 +171,7 @@ export default function TodosPage() {
 
       {filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">
-          {filter === 'All' ? 'No tasks yet. Create your first task.' : `No ${filter.toLowerCase()} tasks.`}
+          {isLoading ? 'Loading…' : filter !== 'All' ? `No ${filter.toLowerCase()} tasks.` : isOwner ? 'No tasks yet. Create your first task.' : 'No tasks assigned to you.'}
         </div>
       ) : (
         <div className="space-y-3">
@@ -198,20 +185,20 @@ export default function TodosPage() {
                 <div className="p-4">
                   <div className="flex items-start gap-3">
                     <button
-                      onClick={() => updateStatus(todo.id, todo.status === 'Done' ? 'Pending' : todo.status === 'Pending' ? 'In Progress' : 'Done')}
+                      onClick={() => updateTodo(todo.id, { status: todo.status === 'Done' ? 'Pending' : todo.status === 'Pending' ? 'In Progress' : 'Done' })}
                       className={`mt-0.5 shrink-0 ${statusColors[todo.status]}`}
                     >
                       <Icon className="w-5 h-5" />
                     </button>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <div>
+                        <div className="min-w-0">
                           <p className={`text-sm font-medium ${todo.status === 'Done' ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
                           {todo.description && <p className="text-xs text-muted-foreground mt-0.5">{todo.description}</p>}
                         </div>
                         <select
                           value={todo.status}
-                          onChange={e => updateStatus(todo.id, e.target.value)}
+                          onChange={e => updateTodo(todo.id, { status: e.target.value })}
                           className="px-2 py-1 text-xs border border-border rounded-lg bg-background shrink-0"
                         >
                           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -219,19 +206,26 @@ export default function TodosPage() {
                       </div>
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                         <span>{todo.todoId}</span>
-                        <span className="flex items-center gap-1">
-                          Assign:
-                          <select
-                            value={todo.assignedTo || ''}
-                            onChange={e => updateAssignee(todo.id, e.target.value)}
-                            className="px-1.5 py-0.5 text-xs border border-border rounded bg-background"
-                          >
-                            <option value="">Unassigned</option>
-                            {employees.map(emp => (
-                              <option key={emp.id} value={emp.name}>{emp.name}</option>
-                            ))}
-                          </select>
-                        </span>
+                        {isOwner ? (
+                          <span className="flex items-center gap-1">
+                            Assign:
+                            <select
+                              value={todo.assignedToId || employees.find(e => e.name === todo.assignedTo)?.id || ''}
+                              onChange={e => updateTodo(todo.id, {
+                                assignedToId: e.target.value || null,
+                                assignedTo: employees.find(emp => emp.id === e.target.value)?.name ?? null,
+                              })}
+                              className="px-1.5 py-0.5 text-xs border border-border rounded bg-background max-w-[10rem]"
+                            >
+                              <option value="">Unassigned</option>
+                              {employees.map(emp => (
+                                <option key={emp.id} value={emp.id}>{emp.name}</option>
+                              ))}
+                            </select>
+                          </span>
+                        ) : todo.assignedTo && (
+                          <span className="flex items-center gap-1"><User className="w-3 h-3" />{todo.assignedTo}</span>
+                        )}
                         {todo.deadline && (
                           <span className={isOverdue ? 'text-red font-medium' : ''}>
                             {isOverdue && <AlertTriangle className="w-3 h-3 inline mr-0.5" />}
@@ -274,7 +268,7 @@ export default function TodosPage() {
                         onKeyDown={e => { if (e.key === 'Enter') addComment(todo.id) }}
                         className="flex-1 px-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
-                      <button onClick={() => addComment(todo.id)} className="px-2 py-1.5 bg-accent text-accent-foreground rounded-lg">
+                      <button onClick={() => addComment(todo.id)} disabled={commenting} aria-label="Send comment" className="px-2.5 py-1.5 bg-accent text-accent-foreground rounded-lg disabled:opacity-50">
                         <Send className="w-3.5 h-3.5" />
                       </button>
                     </div>

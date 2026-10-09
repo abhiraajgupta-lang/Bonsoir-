@@ -1,6 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import useSWR from 'swr'
+import { send as request, useBusy } from '@/lib/api'
+import { useConfirm } from '@/components/ConfirmDialog'
 import { Plus, Pencil, Check, X, Trash2 } from 'lucide-react'
 import { ROLE_LABELS, Employee } from '@/lib/auth-context'
 import { EMPLOYEE_ROLES as ROLES, Role } from '@/lib/roles'
@@ -8,53 +11,41 @@ import { EMPLOYEE_ROLES as ROLES, Role } from '@/lib/roles'
 const emptyForm = { name: '', role: 'store_manager', mobile: '', email: '', password: '' }
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState<Employee[]>([])
+  const { data: employees = [], mutate: load } = useSWR<Employee[]>('/api/employees')
+  const confirm = useConfirm()
+  const [saving, runSave] = useBusy()
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [formError, setFormError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState(emptyForm)
 
-  const load = () => {
-    fetch('/api/employees').then(r => r.json()).then(setEmployees)
-  }
-
-  useEffect(load, [])
-
   const send = async (url: string, method: string, body?: object) => {
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    })
-    if (!res.ok) {
-      const err = (await res.json().catch(() => ({}))).error || 'Something went wrong'
-      return err as string
-    }
+    const res = await request(url, method, body)
     load()
-    return null
+    return res.ok ? null : res.error
   }
 
-  const create = async () => {
+  const create = () => runSave(async () => {
     const err = await send('/api/employees', 'POST', form)
     if (err) return setFormError(err)
     setShowNew(false)
     setFormError('')
     setForm(emptyForm)
-  }
+  })
 
   const startEdit = (emp: Employee) => {
     setEditingId(emp.id)
     setEditForm({ name: emp.name, role: emp.role, mobile: emp.mobile || '', email: emp.email || '', password: '' })
   }
 
-  const saveEdit = async () => {
+  const saveEdit = () => runSave(async () => {
     if (!editingId || !editForm.name) return
     const { password, ...rest } = editForm
     const err = await send(`/api/employees/${editingId}`, 'PUT', password ? editForm : rest)
     if (err) return alert(err)
     setEditingId(null)
-  }
+  })
 
   const toggleActive = async (emp: Employee) => {
     const err = await send(`/api/employees/${emp.id}`, 'PUT', { active: !emp.active })
@@ -62,7 +53,12 @@ export default function EmployeesPage() {
   }
 
   const deleteEmployee = async (emp: Employee) => {
-    if (!confirm(`Delete ${emp.name}? They will no longer be able to log in.`)) return
+    const ok = await confirm({
+      title: `Delete ${emp.name}?`,
+      message: 'They will no longer be able to log in. Tasks assigned to them stay in the list. To pause access instead, mark them Inactive.',
+      confirmLabel: 'Delete employee',
+    })
+    if (!ok) return
     const err = await send(`/api/employees/${emp.id}`, 'DELETE')
     if (err) alert(err)
   }
@@ -105,7 +101,7 @@ export default function EmployeesPage() {
             <p><strong>Designer / Merchandiser:</strong> Only styles tab</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={create} disabled={!form.name || form.password.length < 6} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">Add</button>
+            <button onClick={create} disabled={saving || !form.name || form.password.length < 6} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">Add</button>
             <button onClick={() => { setShowNew(false); setFormError('') }} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>
@@ -116,7 +112,7 @@ export default function EmployeesPage() {
           No employees added yet. Add employees and assign them roles.
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="bg-card border border-border rounded-xl overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30">
@@ -150,7 +146,7 @@ export default function EmployeesPage() {
                       </td>
                       <td className="px-4 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={saveEdit} className="p-1 text-green hover:bg-muted rounded"><Check className="w-4 h-4" /></button>
+                          <button onClick={saveEdit} disabled={saving} aria-label="Save" className="p-1 text-green hover:bg-muted rounded disabled:opacity-40"><Check className="w-4 h-4" /></button>
                           <button onClick={() => setEditingId(null)} className="p-1 text-muted-foreground hover:bg-muted rounded"><X className="w-4 h-4" /></button>
                         </div>
                       </td>

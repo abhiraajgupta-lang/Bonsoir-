@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 
 type Tx = Prisma.TransactionClient
 
-const PIECE_SUFFIX_RE = / - (Blazer\/Top|Trouser\/Bottom|Waistcoat|Piece \d+)$/
+const PIECE_SUFFIX_RE = / - (Blazer\/Top|Trouser\/Bottom|Waistcoat|Piece \d+|Upper|Bottom|Coat|Trouser|Vest|Jacket)$/
 
 export function pieceName(p: number) {
   return ['Blazer/Top', 'Trouser/Bottom', 'Waistcoat'][p] ?? `Piece ${p + 1}`
@@ -21,6 +21,8 @@ interface JobItem {
   amount: number
   styleId?: string | null
   pieces: number
+  // Named parts for custom garments, e.g. ['Jacket', 'Trouser', 'Vest']; overrides `pieces`.
+  pieceNames?: readonly string[]
   measurementSetId?: string | null
   deliveryDate?: Date | null
   fabricDetails?: string | null
@@ -30,15 +32,20 @@ interface JobItem {
 }
 
 export async function createJobsForItem(tx: Tx, item: JobItem) {
-  const pieces = Math.max(1, item.pieces || 1)
+  const names = item.pieceNames?.length ? item.pieceNames : null
+  const pieces = names ? names.length : Math.max(1, item.pieces || 1)
   const amounts = splitAmount(item.amount || 0, pieces)
+  const label = (p: number) => {
+    if (names) return pieces === 1 && names[0] === 'Upper' ? item.garmentType : `${item.garmentType} - ${names[p]}`
+    return pieces > 1 ? `${item.garmentType} - ${pieceName(p)}` : item.garmentType
+  }
   for (let p = 0; p < pieces; p++) {
     const job = await tx.job.create({
       data: {
         jobNumber: pieces > 1 ? `${item.baseJobNumber}${String.fromCharCode(65 + p)}` : item.baseJobNumber,
         orderId: item.orderId,
         styleId: item.styleId || null,
-        garmentType: pieces > 1 ? `${item.garmentType} - ${pieceName(p)}` : item.garmentType,
+        garmentType: label(p),
         amount: amounts[p],
         measurementSetId: item.measurementSetId || null,
         deliveryDate: item.deliveryDate ?? null,
@@ -65,7 +72,7 @@ export async function getStylePieces(tx: Tx, styleIds: (string | null | undefine
 export async function syncStylePieces(styleId: string, newPieces: number) {
   const target = Math.max(1, newPieces)
   const jobs = await prisma.job.findMany({
-    where: { styleId, order: { status: { not: 'Completed' } } },
+    where: { styleId, order: { status: 'Active' } },
     include: { trials: { select: { id: true } } },
     orderBy: { jobNumber: 'asc' },
   })

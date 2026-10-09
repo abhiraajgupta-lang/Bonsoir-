@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import useSWR from 'swr'
 import Link from 'next/link'
 import { Scissors } from 'lucide-react'
 import { formatDate } from '@/lib/constants'
@@ -17,7 +18,7 @@ interface Trial {
     order: {
       id: string
       orderNumber: number
-      customer: { name: string; mobile: string }
+      customer: { name: string }
     }
   }
   alterations: Array<{
@@ -28,12 +29,8 @@ interface Trial {
 }
 
 export default function TrialsPage() {
-  const [trials, setTrials] = useState<Trial[]>([])
+  const { data: trials = [] } = useSWR<Trial[]>('/api/trials')
   const [filter, setFilter] = useState('All')
-
-  useEffect(() => {
-    fetch('/api/trials').then(r => r.json()).then(setTrials)
-  }, [])
 
   const filtered = filter === 'All' ? trials : trials.filter(t => t.outcome === filter)
 

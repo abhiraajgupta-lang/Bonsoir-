@@ -1,6 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import useSWR from 'swr'
+import { send } from '@/lib/api'
 import Link from 'next/link'
 import { PRODUCTION_STAGES, ORDER_CHANNELS, formatDate, getDeliveryRisk } from '@/lib/constants'
 
@@ -22,25 +24,16 @@ interface Job {
 }
 
 export default function ProductionPage() {
-  const [jobs, setJobs] = useState<Job[]>([])
   const [stageFilter, setStageFilter] = useState('All')
   const [channelFilter, setChannelFilter] = useState('All')
-
-  const load = () => {
-    const params = new URLSearchParams()
-    if (stageFilter !== 'All') params.set('stage', stageFilter)
-    fetch(`/api/jobs?${params}`).then(r => r.json()).then(setJobs)
-  }
-
-  useEffect(() => { load() }, [stageFilter])
+  const key = stageFilter === 'All' ? '/api/jobs' : `/api/jobs?stage=${encodeURIComponent(stageFilter)}`
+  const { data: jobs = [], mutate } = useSWR<Job[]>(key, { refreshInterval: 120000 })
 
   const changeStage = async (jobId: string, newStage: string) => {
-    await fetch(`/api/jobs/${jobId}/stage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage: newStage }),
-    })
-    load()
+    mutate(jobs.map(j => (j.id === jobId ? { ...j, currentStage: newStage } : j)), { revalidate: false })
+    const res = await send(`/api/jobs/${jobId}/stage`, 'POST', { stage: newStage })
+    if (!res.ok) alert(res.error)
+    mutate()
   }
 
   const filteredJobs = channelFilter === 'All'

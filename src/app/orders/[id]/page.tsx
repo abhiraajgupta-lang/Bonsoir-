@@ -1,16 +1,23 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Plus, IndianRupee, Trash2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { ArrowLeft, Plus, IndianRupee, Ban, Printer } from 'lucide-react'
+import { printTailorSheets, TailorSheet } from '@/lib/tailorSheet'
+import useSWR from 'swr'
+import { send, useBusy } from '@/lib/api'
+import { useDiscard } from '@/components/useDiscard'
 import { PRODUCTION_STAGES, PAYMENT_METHODS, TRIAL_OUTCOMES, formatCurrency, formatDate, formatDateTime, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
+
+type MeasurementSet = { id: string; customerId: string; version: number; date: string; notes: string | null } & Record<string, unknown>
 
 interface OrderData {
   id: string
   orderNumber: number
   status: string
+  discardedAt: string | null
+  discardedBy: string | null
   eventName: string | null
   deliveryDate: string
   salesperson: string | null
@@ -24,6 +31,7 @@ interface OrderData {
     customerId: string
     name: string
     mobile: string
+    measurements: MeasurementSet[]
   }
   jobs: Array<{
     id: string
@@ -32,6 +40,8 @@ interface OrderData {
     currentStage: string
     fabricDetails: string | null
     designNotes: string | null
+    jobNotes: string | null
+    measurementSet: MeasurementSet | null
     amount: number
     deliveryDate: string | null
     style: { name: string; styleCode: string } | null
@@ -56,9 +66,10 @@ interface OrderData {
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { canSeeCustomerContact, canDelete } = useAuth()
-  const router = useRouter()
-  const [order, setOrder] = useState<OrderData | null>(null)
+  const { canSeeCustomerContact, canDiscard } = useAuth()
+  const { data: order, mutate: load } = useSWR<OrderData>(`/api/orders/${id}`)
+  const discard = useDiscard()
+  const [saving, runSave] = useBusy()
   const [showPayment, setShowPayment] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('Cash')
@@ -69,61 +80,78 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [trialOutcome, setTrialOutcome] = useState('Pending')
   const [alterationDetails, setAlterationDetails] = useState('')
 
-  const load = () => {
-    fetch(`/api/orders/${id}`).then(r => r.json()).then(setOrder)
-  }
-
-  useEffect(() => { load() }, [id])
-
   if (!order) {
     return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-muted-foreground">Loading...</div></div>
   }
 
+  const isDiscarded = order.status === 'Discarded'
+
+  const printForTailor = () => {
+    const sheets = new Map<string, TailorSheet>()
+    for (const job of order.jobs.filter(j => j.currentStage !== 'Delivered')) {
+      const ownerId = job.measurementSet?.customerId ?? order.customer.id
+      const isMain = ownerId === order.customer.id
+      const forName = job.jobNotes?.startsWith('For: ') ? job.jobNotes.slice(5) : null
+      if (!sheets.has(ownerId)) {
+        sheets.set(ownerId, {
+          customerName: isMain ? order.customer.name : forName || 'Family member',
+          customerCode: isMain && canSeeCustomerContact ? order.customer.customerId : null,
+          measurement: job.measurementSet ?? (isMain ? order.customer.measurements?.[0] ?? null : null),
+          garments: [],
+        })
+      }
+      sheets.get(ownerId)!.garments.push({
+        jobNumber: job.jobNumber,
+        orderNumber: order.orderNumber,
+        garmentType: job.garmentType,
+        style: job.style ? [job.style.name, job.style.styleCode].filter(Boolean).join(' — ') : null,
+        fabric: job.fabricDetails,
+        designNotes: job.designNotes,
+        jobNotes: forName ? null : job.jobNotes,
+        deliveryDate: job.deliveryDate || order.deliveryDate,
+      })
+    }
+    if (sheets.size === 0) return alert('All garments in this order are already delivered.')
+    printTailorSheets([...sheets.values()])
+  }
+
   const changeStage = async (jobId: string, newStage: string) => {
-    await fetch(`/api/jobs/${jobId}/stage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage: newStage }),
-    })
+    load({ ...order, jobs: order.jobs.map(j => (j.id === jobId ? { ...j, currentStage: newStage } : j)) }, { revalidate: false })
+    const res = await send(`/api/jobs/${jobId}/stage`, 'POST', { stage: newStage })
+    if (!res.ok) alert(res.error)
     load()
   }
 
-  const recordPayment = async () => {
+  const recordPayment = () => runSave(async () => {
     if (paymentAmount <= 0) return
-    await fetch('/api/payments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        orderId: order.id,
-        amount: paymentAmount,
-        method: paymentMethod,
-        receiptReference: paymentRef,
-      }),
+    const res = await send('/api/payments', 'POST', {
+      orderId: order.id,
+      amount: paymentAmount,
+      method: paymentMethod,
+      receiptReference: paymentRef,
     })
+    if (!res.ok) return alert(res.error)
     setShowPayment(false)
     setPaymentAmount(0)
     setPaymentRef('')
     load()
-  }
+  })
 
-  const recordTrial = async (jobId: string) => {
-    await fetch('/api/trials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jobId,
-        trialDate,
-        notes: trialNotes,
-        outcome: trialOutcome,
-        alterationDetails: trialOutcome === 'Needs Alteration' ? alterationDetails : undefined,
-      }),
+  const recordTrial = (jobId: string) => runSave(async () => {
+    const res = await send('/api/trials', 'POST', {
+      jobId,
+      trialDate,
+      notes: trialNotes,
+      outcome: trialOutcome,
+      alterationDetails: trialOutcome === 'Needs Alteration' ? alterationDetails : undefined,
     })
+    if (!res.ok) return alert(res.error)
     setShowTrial(null)
     setTrialNotes('')
     setTrialOutcome('Pending')
     setAlterationDetails('')
     load()
-  }
+  })
 
   const riskColors = { green: 'text-green', amber: 'text-amber', red: 'text-red' }
   const riskLabels = { green: 'On Track', amber: 'At Risk', red: 'Overdue / At Risk' }
@@ -137,7 +165,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold">Order #{order.orderNumber}</h1>
+          <h1 className={`text-2xl font-semibold ${isDiscarded ? 'line-through text-muted-foreground' : ''}`}>Order #{order.orderNumber}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {canSeeCustomerContact ? (
               <Link href={`/customers/${order.customer.id}`} className="hover:underline">{order.customer.name}</Link>
@@ -148,27 +176,42 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             {order.eventName && ` · ${order.eventName}`}
           </p>
         </div>
-        <div className="mt-2 sm:mt-0 flex items-center gap-2">
-          {canDelete && (
+        <div className="mt-3 sm:mt-0 flex flex-wrap items-center gap-2">
+          {!isDiscarded && (
             <button
-              onClick={async () => {
-                if (!confirm(`Delete Order #${order.orderNumber}? All its jobs, trials and payments will be removed. This cannot be undone.`)) return
-                const res = await fetch(`/api/orders/${id}`, { method: 'DELETE' })
-                if (res.ok) router.push('/orders')
-                else alert('Failed to delete order')
-              }}
-              className="flex items-center gap-1 px-3 py-1 border border-border rounded-lg text-xs font-medium text-red hover:bg-muted"
+              onClick={printForTailor}
+              className="flex items-center gap-1 px-3 py-1 border border-border rounded-lg text-xs font-medium hover:bg-muted"
             >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
+              <Printer className="w-3.5 h-3.5" /> Tailor Sheet
+            </button>
+          )}
+          {canDiscard && order.status === 'Active' && (
+            <button
+              onClick={() => discard('order', order.id, `Order #${order.orderNumber}`)}
+              className="flex items-center gap-1 px-3 py-1 border border-border rounded-lg text-xs font-medium text-red hover:bg-red/10"
+            >
+              <Ban className="w-3.5 h-3.5" /> Discard
             </button>
           )}
           <span className={`inline-flex px-2.5 py-1 rounded text-xs font-semibold ${
-            order.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
+            order.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : isDiscarded ? 'bg-red/10 text-red' : 'bg-gray-100 text-gray-600'
           }`}>
             {order.status}
           </span>
         </div>
       </div>
+
+      {isDiscarded && (
+        <div className="mb-6 flex items-start gap-2 rounded-xl border border-red/30 bg-red/5 px-4 py-3 text-sm">
+          <Ban className="w-4 h-4 text-red mt-0.5 shrink-0" />
+          <p>
+            This order was discarded{order.discardedBy ? ` by ${order.discardedBy}` : ''}
+            {order.discardedAt ? ` on ${formatDate(order.discardedAt)}` : ''} and is no longer in making.
+          </p>
+        </div>
+      )}
+
+      <div className={isDiscarded ? 'opacity-60' : ''}>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="bg-card border border-border rounded-xl p-4">
@@ -234,7 +277,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                   </div>
 
-                  {job.currentStage !== 'Delivered' && (
+                  {job.currentStage !== 'Delivered' && !isDiscarded && (
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-3">
                       <div className="flex-1">
                         <label className="block text-xs text-muted-foreground mb-1">Change Stage</label>
@@ -295,9 +338,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                       )}
                       <button
                         onClick={() => recordTrial(job.id)}
-                        className="px-3 py-1.5 bg-accent text-accent-foreground rounded-lg text-xs font-medium"
+                        disabled={saving}
+                        className="px-3 py-1.5 bg-accent text-accent-foreground rounded-lg text-xs font-medium disabled:opacity-40"
                       >
-                        Save Trial
+                        {saving ? 'Saving…' : 'Save Trial'}
                       </button>
                     </div>
                   )}
@@ -352,7 +396,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Payments</h2>
-          {order.balanceDue > 0 && (
+          {order.balanceDue > 0 && !isDiscarded && (
             <button
               onClick={() => setShowPayment(!showPayment)}
               className="flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
@@ -397,15 +441,16 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
             <button
               onClick={recordPayment}
-              className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-accent/90"
+              disabled={saving}
+              className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-accent/90 disabled:opacity-40"
             >
-              Save Payment
+              {saving ? 'Saving…' : 'Save Payment'}
             </button>
           </div>
         )}
 
         {order.payments.length > 0 ? (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="bg-card border border-border rounded-xl overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -432,6 +477,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             No payments recorded yet.
           </div>
         )}
+      </div>
       </div>
     </div>
   )

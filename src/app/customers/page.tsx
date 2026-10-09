@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import useSWR from 'swr'
+import { send, useBusy } from '@/lib/api'
 import Link from 'next/link'
-import { Search, Plus, AlertCircle, Trash2 } from 'lucide-react'
-import { useAuth } from '@/lib/auth-context'
+import { Search, Plus, AlertCircle } from 'lucide-react'
 import { formatCurrency } from '@/lib/constants'
 
 interface Customer {
@@ -15,7 +16,7 @@ interface Customer {
   email: string | null
   city: string | null
   createdAt: string
-  orders: Array<{ id: string; totalAmount: number; status: string }>
+  orders: Array<{ totalAmount: number; status: string }>
   _count: { orders: number }
 }
 
@@ -31,28 +32,16 @@ const COUNTRY_CODES = [
 ]
 
 export default function CustomersPage() {
-  const { canDelete } = useAuth()
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const { data: customers = [], mutate: load, isLoading } = useSWR<Customer[]>(`/api/customers?search=${encodeURIComponent(debouncedSearch)}`)
+  const [saving, runSave] = useBusy()
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ name: '', countryCode: '+91', mobile: '', email: '', city: '' })
   const [mobileError, setMobileError] = useState('')
 
-  const load = (q = '') => {
-    fetch(`/api/customers?search=${encodeURIComponent(q)}`).then(r => r.json()).then(setCustomers)
-  }
-
-  useEffect(() => { load() }, [])
-
-  const deleteCustomer = async (c: Customer) => {
-    if (!confirm(`Delete customer ${c.name} (${c.customerId})? This also deletes their ${c._count.orders} order(s), estimates and measurements. This cannot be undone.`)) return
-    const res = await fetch(`/api/customers/${c.id}`, { method: 'DELETE' })
-    if (res.ok) load(search)
-    else alert('Failed to delete customer')
-  }
-
   useEffect(() => {
-    const t = setTimeout(() => load(search), 300)
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
 
@@ -67,7 +56,7 @@ export default function CustomersPage() {
     }
   }
 
-  const createCustomer = async () => {
+  const createCustomer = () => runSave(async () => {
     if (!form.name || !form.mobile) return
     const digits = form.mobile.replace(/\D/g, '')
     const cc = COUNTRY_CODES.find(c => c.code === form.countryCode)
@@ -75,18 +64,13 @@ export default function CustomersPage() {
       setMobileError(`Expected ${cc.digits} digits for ${form.countryCode}, got ${digits.length}`)
       return
     }
-    const res = await fetch('/api/customers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, mobile: digits }),
-    })
-    if (res.ok) {
-      setShowNew(false)
-      setForm({ name: '', countryCode: '+91', mobile: '', email: '', city: '' })
-      setMobileError('')
-      load(search)
-    }
-  }
+    const res = await send('/api/customers', 'POST', { ...form, mobile: digits })
+    if (!res.ok) return setMobileError(res.error || 'Could not create customer')
+    setShowNew(false)
+    setForm({ name: '', countryCode: '+91', mobile: '', email: '', city: '' })
+    setMobileError('')
+    load()
+  })
 
   return (
     <div>
@@ -142,7 +126,7 @@ export default function CustomersPage() {
             </div>
           )}
           <div className="flex gap-2">
-            <button onClick={createCustomer} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium">Create</button>
+            <button onClick={createCustomer} disabled={saving} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{saving ? 'Creating…' : 'Create'}</button>
             <button onClick={() => { setShowNew(false); setMobileError('') }} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>
@@ -161,10 +145,10 @@ export default function CustomersPage() {
 
       {customers.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">
-          {search ? 'No customers match your search.' : 'No customers yet.'}
+          {isLoading ? 'Loading…' : search ? 'No customers match your search.' : 'No customers yet.'}
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="bg-card border border-border rounded-xl overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
@@ -173,12 +157,11 @@ export default function CustomersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden md:table-cell">City</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3">Orders</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden lg:table-cell">Total Spend</th>
-                {canDelete && <th className="px-4 py-3 w-10"></th>}
               </tr>
             </thead>
             <tbody>
               {customers.map(c => {
-                const totalSpend = c.orders.reduce((sum, o) => sum + o.totalAmount, 0)
+                const totalSpend = c.orders.filter(o => o.status !== 'Discarded').reduce((sum, o) => sum + o.totalAmount, 0)
                 return (
                   <tr key={c.id} className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
                     <td className="px-4 py-3">
@@ -189,13 +172,6 @@ export default function CustomersPage() {
                     <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">{c.city || '—'}</td>
                     <td className="px-4 py-3 text-sm">{c._count.orders}</td>
                     <td className="px-4 py-3 text-sm font-medium hidden lg:table-cell">{formatCurrency(totalSpend)}</td>
-                    {canDelete && (
-                      <td className="px-4 py-3">
-                        <button onClick={() => deleteCustomer(c)} title="Delete customer" className="text-muted-foreground hover:text-red p-1">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    )}
                   </tr>
                 )
               })}

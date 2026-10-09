@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import useSWR from 'swr'
 import { ShoppingBag, Scissors, Truck, AlertTriangle, IndianRupee } from 'lucide-react'
 import { formatCurrency } from '@/lib/constants'
 import Link from 'next/link'
@@ -26,13 +26,7 @@ interface DashboardData {
 }
 
 export default function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null)
-
-  useEffect(() => {
-    fetch('/api/dashboard')
-      .then(r => r.json())
-      .then(setData)
-  }, [])
+  const { data } = useSWR<DashboardData>('/api/dashboard', { refreshInterval: 120000 })
 
   if (!data) {
     return (

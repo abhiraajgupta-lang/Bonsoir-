@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const customers = await prisma.customer.findMany({
     where,
     include: {
-      orders: { select: { id: true, totalAmount: true, status: true, createdAt: true } },
+      orders: { select: { totalAmount: true, status: true } },
       _count: { select: { orders: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -28,6 +28,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
+  if (!body.name?.trim() || !body.mobile) {
+    return NextResponse.json({ error: 'Name and mobile are required' }, { status: 400 })
+  }
+  const existing = await prisma.customer.findUnique({ where: { mobile: body.mobile }, select: { name: true, customerId: true } })
+  if (existing) {
+    return NextResponse.json({ error: `Mobile already belongs to ${existing.name} (${existing.customerId})` }, { status: 409 })
+  }
 
   const counter = await prisma.counter.upsert({
     where: { id: 'customer' },

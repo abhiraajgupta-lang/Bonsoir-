@@ -81,6 +81,8 @@ model Order {
   status        String   @default("Active")
   notes         String?
   estimateId    String?
+  discardedAt   DateTime?
+  discardedBy   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -200,6 +202,8 @@ model Estimate {
   channel        String   @default("In-Store")
   status         String   @default("Created")
   convertedOrderId String?
+  discardedAt    DateTime?
+  discardedBy    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -223,13 +227,16 @@ model TodoItem {
   todoId      String   @unique
   title       String
   description String?
-  assignedTo  String?
+  assignedTo   String?
+  assignedToId String?
   deadline    DateTime?
   status      String   @default("Pending")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   comments TodoComment[]
+
+  @@index([assignedToId])
 }
 
 model TodoComment {
@@ -258,4 +265,11 @@ model Employee {
 model Counter {
   id    String @id
   value Int    @default(0)
+}
+
+model StyleCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdBy String?
+  createdAt DateTime @default(now())
 }

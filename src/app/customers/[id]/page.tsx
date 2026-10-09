@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Ruler, Edit2, Check, X, Trash2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '@/lib/auth-context'
-import { formatCurrency, formatDate } from '@/lib/constants'
+import { ArrowLeft, Plus, Ruler, Edit2, Check, X, Printer } from 'lucide-react'
+import { printTailorSheets } from '@/lib/tailorSheet'
+import useSWR from 'swr'
+import { send, useBusy } from '@/lib/api'
+import { formatCurrency, formatDate, MEASUREMENT_FIELDS } from '@/lib/constants'
 
 interface CustomerData {
   id: string
@@ -54,45 +55,24 @@ interface CustomerData {
     totalAmount: number
     createdAt: string
     deliveryDate: string
-    jobs: Array<{ garmentType: string }>
+    jobs: Array<{
+      jobNumber: string
+      garmentType: string
+      currentStage: string
+      fabricDetails: string | null
+      designNotes: string | null
+      jobNotes: string | null
+      deliveryDate: string | null
+      style: { name: string | null; styleCode: string | null } | null
+    }>
   }>
 }
 
-const MEASUREMENT_FIELDS = [
-  { group: 'Upper Body', fields: [
-    { key: 'chest', label: 'Chest' },
-    { key: 'stomach', label: 'Stomach' },
-    { key: 'hips', label: 'Hips' },
-    { key: 'shoulder', label: 'Shoulder' },
-    { key: 'sleeveLength', label: 'Sleeve Length' },
-    { key: 'bicep', label: 'Bicep' },
-    { key: 'neck', label: 'Neck' },
-  ]},
-  { group: 'Lower Body', fields: [
-    { key: 'waist', label: 'Waist' },
-    { key: 'trouserLength', label: 'Trouser Length' },
-    { key: 'thigh', label: 'Thigh' },
-    { key: 'knee', label: 'Knee' },
-    { key: 'bottom', label: 'Bottom' },
-    { key: 'fork', label: 'Fork' },
-    { key: 'allRound', label: 'All Round' },
-    { key: 'calf', label: 'Calf' },
-    { key: 'inSeam', label: 'In-Seam' },
-  ]},
-  { group: 'Garment Lengths', fields: [
-    { key: 'sherwaniLength', label: 'Sherwani Length' },
-    { key: 'jacketLength', label: 'Jacket Length' },
-    { key: 'kurtalength', label: 'Kurta Length' },
-    { key: 'indoWesternLength', label: 'Indo-Western Length' },
-    { key: 'suitLength', label: 'Suit Length' },
-  ]},
-]
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const router = useRouter()
-  const { canDelete } = useAuth()
-  const [customer, setCustomer] = useState<CustomerData | null>(null)
+  const { data: customer, mutate: load } = useSWR<CustomerData>(`/api/customers/${id}`)
+  const [saving, runSave] = useBusy()
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState<Partial<CustomerData>>({})
   const [showMeasurement, setShowMeasurement] = useState(false)
@@ -100,42 +80,50 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [editingMeasurement, setEditingMeasurement] = useState<string | null>(null)
   const [mEditForm, setMEditForm] = useState<Record<string, number | string>>({})
 
-  const load = () => {
-    fetch(`/api/customers/${id}`).then(r => r.json()).then(d => {
-      setCustomer(d)
-      setEditForm(d)
-    })
-  }
-
-  useEffect(() => { load() }, [id])
-
   if (!customer) {
     return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-muted-foreground">Loading...</div></div>
   }
 
-  const totalSpend = customer.orders.reduce((sum, o) => sum + o.totalAmount, 0)
+  const totalSpend = customer.orders.filter(o => o.status !== 'Discarded').reduce((sum, o) => sum + o.totalAmount, 0)
   const lastOrder = customer.orders[0]
 
-  const saveEdit = async () => {
-    await fetch(`/api/customers/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editForm),
-    })
-    setEditing(false)
-    load()
+  const printForTailor = () => {
+    const garments = customer.orders
+      .filter(o => o.status === 'Active')
+      .flatMap(o => o.jobs
+        .filter(j => j.currentStage !== 'Delivered' && !j.jobNotes?.startsWith('For: '))
+        .map(j => ({
+          jobNumber: j.jobNumber,
+          orderNumber: o.orderNumber,
+          garmentType: j.garmentType,
+          style: j.style ? [j.style.name, j.style.styleCode].filter(Boolean).join(' — ') : null,
+          fabric: j.fabricDetails,
+          designNotes: j.designNotes,
+          jobNotes: j.jobNotes,
+          deliveryDate: j.deliveryDate || o.deliveryDate,
+        })))
+    printTailorSheets([{
+      customerName: customer.name,
+      customerCode: customer.customerId,
+      measurement: customer.measurements[0] ?? null,
+      garments,
+    }])
   }
 
-  const saveMeasurement = async () => {
-    await fetch('/api/measurements', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId: id, ...mForm }),
-    })
+  const saveEdit = () => runSave(async () => {
+    const res = await send(`/api/customers/${id}`, 'PUT', editForm)
+    if (!res.ok) return alert(res.error)
+    setEditing(false)
+    load()
+  })
+
+  const saveMeasurement = () => runSave(async () => {
+    const res = await send('/api/measurements', 'POST', { customerId: id, ...mForm })
+    if (!res.ok) return alert(res.error)
     setShowMeasurement(false)
     setMForm({})
     load()
-  }
+  })
 
   const startEditMeasurement = (m: CustomerData['measurements'][0]) => {
     setEditingMeasurement(m.id)
@@ -150,17 +138,14 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     setMEditForm(formData)
   }
 
-  const saveEditMeasurement = async () => {
+  const saveEditMeasurement = () => runSave(async () => {
     if (!editingMeasurement) return
-    await fetch(`/api/measurements/${editingMeasurement}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mEditForm),
-    })
+    const res = await send(`/api/measurements/${editingMeasurement}`, 'PUT', mEditForm)
+    if (!res.ok) return alert(res.error)
     setEditingMeasurement(null)
     setMEditForm({})
     load()
-  }
+  })
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -174,30 +159,20 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <h1 className="text-2xl font-semibold">{customer.name}</h1>
           <p className="text-sm text-muted-foreground">{customer.customerId} · {customer.countryCode} {customer.mobile}</p>
         </div>
-        <div className="flex gap-2 mt-2 sm:mt-0">
+        <div className="flex flex-wrap gap-2 mt-3 sm:mt-0">
           <Link href="/estimates" className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium">
             New Estimate
           </Link>
-          <button onClick={() => setEditing(!editing)} className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">
+          <button onClick={printForTailor} className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">
+            <Printer className="w-4 h-4" /> Tailor Sheet
+          </button>
+          <button onClick={() => { setEditForm(customer); setEditing(!editing) }} className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">
             {editing ? 'Cancel' : 'Edit'}
           </button>
-          {canDelete && (
-            <button
-              onClick={async () => {
-                if (!confirm(`Delete ${customer.name}? This also deletes all their orders, estimates and measurements. This cannot be undone.`)) return
-                const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' })
-                if (res.ok) router.push('/customers')
-                else alert('Failed to delete customer')
-              }}
-              className="flex items-center gap-1 px-4 py-2 border border-border rounded-lg text-sm font-medium text-red hover:bg-muted"
-            >
-              <Trash2 className="w-4 h-4" /> Delete
-            </button>
-          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground uppercase">Total Orders</p>
           <p className="text-xl font-semibold mt-1">{customer.orders.length}</p>
@@ -245,7 +220,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                   className="w-full px-2 py-1.5 text-sm border border-border rounded-lg resize-none"
                 />
               </div>
-              <button onClick={saveEdit} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium">Save</button>
+              <button onClick={saveEdit} disabled={saving} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{saving ? 'Saving…' : 'Save'}</button>
             </div>
           ) : (
             <div className="space-y-2 text-sm">
@@ -329,7 +304,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               />
             </div>
             <div className="flex gap-2 mt-3">
-              <button onClick={saveMeasurement} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium">Save Measurements</button>
+              <button onClick={saveMeasurement} disabled={saving} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{saving ? 'Saving…' : 'Save Measurements'}</button>
               <button onClick={() => { setShowMeasurement(false); setMForm({}) }} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
             </div>
           </div>
@@ -349,7 +324,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                     <span className="text-xs text-muted-foreground">{formatDate(m.date)}</span>
                     {editingMeasurement === m.id ? (
                       <div className="flex gap-1">
-                        <button onClick={saveEditMeasurement} className="p-1 text-green hover:bg-muted rounded"><Check className="w-3.5 h-3.5" /></button>
+                        <button onClick={saveEditMeasurement} disabled={saving} aria-label="Save measurement" className="p-1 text-green hover:bg-muted rounded disabled:opacity-40"><Check className="w-3.5 h-3.5" /></button>
                         <button onClick={() => { setEditingMeasurement(null); setMEditForm({}) }} className="p-1 text-red hover:bg-muted rounded"><X className="w-3.5 h-3.5" /></button>
                       </div>
                     ) : (
@@ -430,7 +405,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             No orders yet.
           </div>
         ) : (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="bg-card border border-border rounded-xl overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -443,7 +418,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               </thead>
               <tbody>
                 {customer.orders.map(o => (
-                  <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/50">
+                  <tr key={o.id} className={`border-b border-border last:border-0 hover:bg-muted/50 ${o.status === 'Discarded' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3">
                       <Link href={`/orders/${o.id}`} className="text-sm font-semibold hover:underline">#{o.orderNumber}</Link>
                     </td>
@@ -452,7 +427,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                     <td className="px-4 py-3 text-sm font-medium">{formatCurrency(o.totalAmount)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                        o.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
+                        o.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : o.status === 'Discarded' ? 'bg-red/10 text-red line-through' : 'bg-gray-100 text-gray-600'
                       }`}>{o.status}</span>
                     </td>
                   </tr>

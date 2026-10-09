@@ -8,18 +8,22 @@ export async function GET() {
   tomorrow.setDate(tomorrow.getDate() + 1)
 
   const [activeOrders, allJobs, payments, trialsToday] = await Promise.all([
-    prisma.order.count({ where: { status: { not: 'Completed' } } }),
+    prisma.order.count({ where: { status: 'Active' } }),
     prisma.job.findMany({
-      where: { status: { not: 'Completed' } },
-      include: { order: { include: { customer: true } } },
+      where: { status: { not: 'Completed' }, order: { status: 'Active' } },
+      select: {
+        jobNumber: true, garmentType: true, currentStage: true, deliveryDate: true,
+        order: { select: { orderNumber: true, deliveryDate: true, customer: { select: { name: true } } } },
+      },
     }),
     prisma.order.aggregate({
-      where: { status: { not: 'Completed' } },
+      where: { status: 'Active' },
       _sum: { balanceDue: true },
     }),
     prisma.trial.count({
       where: {
         trialDate: { gte: today, lt: tomorrow },
+        job: { order: { status: 'Active' } },
       },
     }),
   ])

@@ -54,7 +54,7 @@ export function SearchBar() {
   }
 
   return (
-    <div ref={ref} className="relative max-w-xl w-full ml-10 lg:ml-0">
+    <div ref={ref} className="relative max-w-xl w-full">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input

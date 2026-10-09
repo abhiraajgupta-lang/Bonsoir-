@@ -1,8 +1,10 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
-import { Role, ROLE_LABELS, canAccessPage, canDelete as roleCanDelete, isRole } from '@/lib/roles'
+import { SWRConfig } from 'swr'
+import { Role, ROLE_LABELS, canAccessPage, canDiscard as roleCanDiscard, isRole } from '@/lib/roles'
+import { clearDeviceCache, createPersistentCache, fetcher } from '@/lib/api'
 
 export { ROLE_LABELS }
 export type { Role }
@@ -26,58 +28,91 @@ export interface CurrentUser {
 }
 
 interface AuthContextType {
-  currentEmployee: CurrentUser | null
+  currentEmployee: CurrentUser
   role: Role
   hasAccess: (path: string) => boolean
+  isOwner: boolean
   canCreateTodo: boolean
   canSeeCustomerContact: boolean
-  canDelete: boolean
+  canDiscard: boolean
   logout: () => Promise<void>
 }
 
+const USER_KEY = 'bonsoir_user'
 const AuthContext = createContext<AuthContextType | null>(null)
+
+function readCachedUser(): CurrentUser | null {
+  try {
+    const u = JSON.parse(localStorage.getItem(USER_KEY) || 'null')
+    return u && isRole(u.role) ? u : null
+  } catch {
+    return null
+  }
+}
+
+function toLogin(pathname: string) {
+  window.location.href = `/login?next=${encodeURIComponent(pathname)}`
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const isLoginPage = pathname === '/login'
   const [user, setUser] = useState<CurrentUser | null>(null)
-  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     if (isLoginPage) return
+    const cached = readCachedUser()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show the cached user instantly while /me revalidates
+    if (cached) setUser(cached)
     fetch('/api/auth/me')
       .then(r => (r.ok ? r.json() : null))
       .then((me: CurrentUser | null) => {
         if (!me || !isRole(me.role)) {
-          window.location.href = `/login?next=${encodeURIComponent(pathname)}`
-          return
+          localStorage.removeItem(USER_KEY)
+          clearDeviceCache()
+          return toLogin(pathname)
         }
+        if (cached && cached.id !== me.id) clearDeviceCache()
+        localStorage.setItem(USER_KEY, JSON.stringify(me))
         setUser(me)
-        setLoaded(true)
       })
-  }, [isLoginPage])
+      .catch(() => { if (!cached) toLogin(pathname) })
+  }, [isLoginPage]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    window.location.href = '/login'
-  }
+  const userId = user?.id
+  const swrConfig = useMemo(() => userId ? {
+    fetcher,
+    provider: () => createPersistentCache(userId),
+    revalidateOnFocus: true,
+    dedupingInterval: 4000,
+    keepPreviousData: true,
+  } : null, [userId])
 
   if (isLoginPage) return <>{children}</>
-  if (!loaded) return null
-  if (!user) return null
+  if (!user || !swrConfig) return null
 
   const role = user.role
   const value: AuthContextType = {
     currentEmployee: user,
     role,
     hasAccess: (path: string) => canAccessPage(role, path),
+    isOwner: role === 'owner',
     canCreateTodo: role === 'owner',
     canSeeCustomerContact: role !== 'production_manager',
-    canDelete: roleCanDelete(role),
-    logout,
+    canDiscard: roleCanDiscard(role),
+    logout: async () => {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      localStorage.removeItem(USER_KEY)
+      clearDeviceCache()
+      window.location.href = '/login'
+    },
   }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={value}>
+      <SWRConfig value={swrConfig}>{children}</SWRConfig>
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {

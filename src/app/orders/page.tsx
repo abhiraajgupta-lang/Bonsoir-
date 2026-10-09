@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { Search, Trash2 } from 'lucide-react'
+import useSWR from 'swr'
+import { Search, Ban } from 'lucide-react'
+import { useDiscard } from '@/components/useDiscard'
 import { formatCurrency, formatDate, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
@@ -21,25 +23,11 @@ interface Order {
 }
 
 export default function OrdersPage() {
-  const { canSeeCustomerContact, canDelete } = useAuth()
-  const [orders, setOrders] = useState<Order[]>([])
+  const { canSeeCustomerContact, canDiscard } = useAuth()
   const [filter, setFilter] = useState('All')
   const [search, setSearch] = useState('')
-
-  const load = () => {
-    fetch(`/api/orders?status=${filter}`)
-      .then(r => r.json())
-      .then(setOrders)
-  }
-
-  useEffect(load, [filter])
-
-  const deleteOrder = async (order: Order) => {
-    if (!confirm(`Delete Order #${order.orderNumber} for ${order.customer.name}? All its jobs, trials and payments will be removed. This cannot be undone.`)) return
-    const res = await fetch(`/api/orders/${order.id}`, { method: 'DELETE' })
-    if (res.ok) load()
-    else alert('Failed to delete order')
-  }
+  const { data: orders = [], isLoading } = useSWR<Order[]>(`/api/orders?status=${filter}`, { refreshInterval: 180000 })
+  const discard = useDiscard()
 
   const filtered = search
     ? orders.filter(o =>
@@ -49,13 +37,13 @@ export default function OrdersPage() {
       )
     : orders
 
-  const statusFilters = ['All', 'Active', 'Completed']
+  const statusFilters = ['All', 'Active', 'Completed', 'Discarded']
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-semibold">Orders</h1>
-        <p className="text-sm text-muted-foreground">Orders are created from Estimates</p>
+        <p className="hidden sm:block text-sm text-muted-foreground">Orders are created from Estimates</p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -69,12 +57,12 @@ export default function OrdersPage() {
             className="w-full pl-10 pr-4 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
           />
         </div>
-        <div className="flex gap-1 bg-muted rounded-lg p-1">
+        <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
           {statusFilters.map(s => (
             <button
               key={s}
               onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
                 filter === s ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -86,7 +74,7 @@ export default function OrdersPage() {
 
       {filtered.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">
-          {orders.length === 0 ? (
+          {isLoading ? 'Loading…' : orders.length === 0 ? (
             <div>
               <p>No orders yet.</p>
               <p className="text-sm mt-1">Create an estimate first, then convert it to an order.</p>
@@ -97,7 +85,7 @@ export default function OrdersPage() {
           ) : 'No orders match your search.'}
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="bg-card border border-border rounded-xl overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
@@ -108,7 +96,7 @@ export default function OrdersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3">Amount</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden lg:table-cell">Status</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden lg:table-cell">Risk</th>
-                {canDelete && <th className="px-4 py-3 w-10"></th>}
+                {canDiscard && <th className="px-2 sm:px-4 py-3 w-10"></th>}
               </tr>
             </thead>
             <tbody>
@@ -127,14 +115,17 @@ export default function OrdersPage() {
                 }
 
                 return (
-                  <tr key={order.id} className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
+                  <tr key={order.id} className={`border-b border-border last:border-0 hover:bg-muted/50 transition-colors ${order.status === 'Discarded' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3">
-                      <Link href={`/orders/${order.id}`} className="text-sm font-semibold hover:underline">
+                      <Link href={`/orders/${order.id}`} className={`text-sm font-semibold hover:underline ${order.status === 'Discarded' ? 'line-through' : ''}`}>
                         #{order.orderNumber}
                       </Link>
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</p>
-                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{order.channel}</span>
+                      {order.status === 'Discarded' && (
+                        <span className="lg:hidden ml-1.5 text-[10px] font-semibold uppercase text-red">Discarded</span>
+                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(order.createdAt)}</p>
+                        <span className="hidden sm:inline text-xs bg-muted px-1.5 py-0.5 rounded whitespace-nowrap">{order.channel}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -167,21 +158,29 @@ export default function OrdersPage() {
                       <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
                         order.status === 'Active'
                           ? 'bg-emerald-100 text-emerald-700'
+                          : order.status === 'Discarded'
+                          ? 'bg-red/10 text-red'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
                         {order.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
-                      {order.status !== 'Completed' && (
+                      {order.status === 'Active' && (
                         <span className={`inline-block w-2.5 h-2.5 rounded-full ${riskDot[worstRisk]}`} />
                       )}
                     </td>
-                    {canDelete && (
-                      <td className="px-4 py-3">
-                        <button onClick={() => deleteOrder(order)} title="Delete order" className="text-muted-foreground hover:text-red p-1">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                    {canDiscard && (
+                      <td className="px-2 sm:px-4 py-3 text-right">
+                        {order.status === 'Active' && (
+                          <button
+                            onClick={() => discard('order', order.id, `Order #${order.orderNumber}`)}
+                            title="Discard order"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-red p-1.5 rounded-lg hover:bg-red/10"
+                          >
+                            <Ban className="w-4 h-4" /><span className="hidden xl:inline">Discard</span>
+                          </button>
+                        )}
                       </td>
                     )}
                   </tr>

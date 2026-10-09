@@ -10,9 +10,11 @@ export async function GET(req: NextRequest) {
   const orders = await prisma.order.findMany({
     where,
     include: {
-      customer: true,
-      jobs: { include: { style: true } },
-      payments: true,
+      customer: { select: { id: true, name: true, customerId: true, mobile: true } },
+      jobs: {
+        select: { id: true, garmentType: true, currentStage: true, deliveryDate: true, style: { select: { name: true } } },
+        orderBy: { jobNumber: 'asc' },
+      },
     },
     orderBy: { createdAt: 'desc' },
     take: 200,

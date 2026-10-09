@@ -82,3 +82,53 @@ export function formatDateTime(date: Date | string): string {
     minute: '2-digit',
   })
 }
+
+export const MEASUREMENT_FIELDS: Array<{ group: string; fields: Array<{ key: string; label: string }> }> = [
+  { group: 'Upper Body', fields: [
+    { key: 'chest', label: 'Chest' },
+    { key: 'stomach', label: 'Stomach' },
+    { key: 'hips', label: 'Hips' },
+    { key: 'shoulder', label: 'Shoulder' },
+    { key: 'sleeveLength', label: 'Sleeve Length' },
+    { key: 'bicep', label: 'Bicep' },
+    { key: 'neck', label: 'Neck' },
+  ]},
+  { group: 'Lower Body', fields: [
+    { key: 'waist', label: 'Waist' },
+    { key: 'trouserLength', label: 'Trouser Length' },
+    { key: 'thigh', label: 'Thigh' },
+    { key: 'knee', label: 'Knee' },
+    { key: 'bottom', label: 'Bottom' },
+    { key: 'fork', label: 'Fork' },
+    { key: 'allRound', label: 'All Round' },
+    { key: 'calf', label: 'Calf' },
+    { key: 'inSeam', label: 'In-Seam' },
+  ]},
+  { group: 'Garment Lengths', fields: [
+    { key: 'sherwaniLength', label: 'Sherwani Length' },
+    { key: 'jacketLength', label: 'Jacket Length' },
+    { key: 'kurtalength', label: 'Kurta Length' },
+    { key: 'indoWesternLength', label: 'Indo-Western Length' },
+    { key: 'suitLength', label: 'Suit Length' },
+  ]},
+]
+
+export const PIECE_SETS = [
+  { key: 'upper', pieces: 1, label: '1 piece — Upper only', parts: ['Upper'] },
+  { key: 'coat', pieces: 1, label: '1 piece — Coat only', parts: ['Coat'] },
+  { key: 'trouser', pieces: 1, label: '1 piece — Trouser only', parts: ['Trouser'] },
+  { key: 'upper_bottom', pieces: 2, label: '2 piece — Upper + Bottom', parts: ['Upper', 'Bottom'] },
+  { key: 'upper_vest', pieces: 2, label: '2 piece — Upper + Vest', parts: ['Upper', 'Vest'] },
+  { key: 'jacket_trouser_vest', pieces: 3, label: '3 piece — Jacket + Trouser + Vest', parts: ['Jacket', 'Trouser', 'Vest'] },
+] as const
+
+export type PieceSetKey = typeof PIECE_SETS[number]['key']
+
+export function getPieceSet(key?: string | null) {
+  return PIECE_SETS.find(p => p.key === key) ?? PIECE_SETS[0]
+}
+
+export function pieceSetSummary(key?: string | null) {
+  const set = getPieceSet(key)
+  return set.key === 'upper' ? '' : `${set.pieces} pc: ${set.parts.join(' + ')}`
+}

@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   const body = await req.json()
 
+  const target = await prisma.order.findUnique({ where: { id: body.orderId }, select: { status: true } })
+  if (!target) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+  if (target.status === 'Discarded') return NextResponse.json({ error: 'This order has been discarded' }, { status: 400 })
+
   const payment = await prisma.payment.create({
     data: {
       orderId: body.orderId,
@@ -25,7 +29,7 @@ export async function POST(req: NextRequest) {
       where: { id: body.orderId },
       data: {
         advancePaid: totalPaid,
-        balanceDue: order.totalAmount - totalPaid,
+        balanceDue: order.netPayable - totalPaid,
       },
     })
   }

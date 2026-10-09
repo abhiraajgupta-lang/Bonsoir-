@@ -6,6 +6,10 @@ import { Lock } from 'lucide-react'
 const inputClass = 'w-full px-3 py-2.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20'
 
 function goNext() {
+  try {
+    localStorage.removeItem('bonsoir_user')
+    for (const k of Object.keys(localStorage)) if (k.startsWith('bonsoir_cache_')) localStorage.removeItem(k)
+  } catch {}
   const next = new URLSearchParams(window.location.search).get('next')
   window.location.href = next && next.startsWith('/') && !next.startsWith('//') ? next : '/'
 }

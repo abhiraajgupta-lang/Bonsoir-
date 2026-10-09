@@ -34,7 +34,7 @@ const navItems = [
   { href: '/employees', label: 'Employees', icon: UsersRound },
 ]
 
-export function Sidebar() {
+export function Sidebar({ pendingTasks = 0 }: { pendingTasks?: number }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const { currentEmployee, hasAccess, role, logout } = useAuth()
@@ -45,9 +45,11 @@ export function Sidebar() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="lg:hidden fixed top-3 left-3 z-50 p-2 rounded-lg bg-accent text-accent-foreground"
+        aria-label="Open menu"
+        className="lg:hidden fixed top-2.5 left-3 z-40 p-2 rounded-lg bg-accent text-accent-foreground"
       >
         <Menu className="w-5 h-5" />
+        {pendingTasks > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red border-2 border-background" />}
       </button>
 
       {open && (
@@ -86,7 +88,12 @@ export function Sidebar() {
                 }`}
               >
                 <Icon className="w-4.5 h-4.5 shrink-0" />
-                {label}
+                <span className="flex-1">{label}</span>
+                {href === '/todos' && pendingTasks > 0 && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-red text-white text-[10px] font-semibold flex items-center justify-center">
+                    {pendingTasks}
+                  </span>
+                )}
               </Link>
             )
           })}

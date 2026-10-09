@@ -8,6 +8,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const job = await prisma.job.findUnique({ where: { id }, include: { order: true } })
   if (!job) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (job.order.status === 'Discarded') return NextResponse.json({ error: 'This order has been discarded' }, { status: 400 })
 
   const newStage = body.stage || PRODUCTION_STAGES[Math.min(
     (STAGE_INDEX[job.currentStage] ?? 0) + 1,

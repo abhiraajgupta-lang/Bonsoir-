@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import useSWR from 'swr'
+import { send, useBusy } from '@/lib/api'
 import { Plus, Trash2, Search, ChevronRight, ChevronLeft, Check } from 'lucide-react'
-import { STYLE_CATEGORIES, PAYMENT_METHODS, formatCurrency } from '@/lib/constants'
+import { PAYMENT_METHODS, formatCurrency } from '@/lib/constants'
+import { useStyleCategories } from '@/lib/useStyleCategories'
 
 interface Customer {
   id: string
@@ -73,17 +76,15 @@ export default function NewOrderPage() {
   const [jobs, setJobs] = useState<JobInput[]>([
     { garmentType: '', styleId: null, styleName: '', fabricDetails: '', designNotes: '', jobNotes: '', deliveryDate: '', measurementSetId: '', amount: 0 },
   ])
-  const [styles, setStyles] = useState<Style[]>([])
+  const { data: styles = [] } = useSWR<Style[]>('/api/styles')
+  const { categories } = useStyleCategories()
+  const [addingCustomer, runAddCustomer] = useBusy()
   const [styleSearch, setStyleSearch] = useState('')
 
   // Payment
   const [advancePaid, setAdvancePaid] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [receiptReference, setReceiptReference] = useState('')
-
-  useEffect(() => {
-    fetch('/api/styles').then(r => r.json()).then(setStyles)
-  }, [])
 
   useEffect(() => {
     if (customerSearch.length >= 2) {
@@ -103,20 +104,14 @@ export default function NewOrderPage() {
     setCustomerResults([])
   }
 
-  const createCustomer = async () => {
+  const createCustomer = () => runAddCustomer(async () => {
     if (!newCustomer.name || !newCustomer.mobile) return
-    const res = await fetch('/api/customers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCustomer),
-    })
-    if (res.ok) {
-      const c = await res.json()
-      await selectCustomer(c)
-      setShowNewCustomer(false)
-      setNewCustomer({ name: '', mobile: '', email: '' })
-    }
-  }
+    const res = await send<Customer>('/api/customers', 'POST', newCustomer)
+    if (!res.ok || !res.data) return alert(res.error)
+    await selectCustomer(res.data)
+    setShowNewCustomer(false)
+    setNewCustomer({ name: '', mobile: '', email: '' })
+  })
 
   const totalAmount = jobs.reduce((sum, j) => sum + (j.amount || 0), 0)
   const balanceDue = totalAmount - advancePaid
@@ -152,6 +147,7 @@ export default function NewOrderPage() {
   }
 
   const submit = async () => {
+    if (submitting) return
     setSubmitting(true)
     try {
       const res = await fetch('/api/orders', {
@@ -302,9 +298,10 @@ export default function NewOrderPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={createCustomer}
-                        className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium"
+                        disabled={addingCustomer}
+                        className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40"
                       >
-                        Create Customer
+                        {addingCustomer ? 'Creating…' : 'Create Customer'}
                       </button>
                       <button
                         onClick={() => setShowNewCustomer(false)}
@@ -393,7 +390,7 @@ export default function NewOrderPage() {
                         className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20 bg-background"
                       >
                         <option value="">Select type</option>
-                        {STYLE_CATEGORIES.filter(c => c !== 'All').map(c => (
+                        {categories.map(c => (
                           <option key={c} value={c}>{c}</option>
                         ))}
                       </select>

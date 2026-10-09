@@ -1,8 +1,12 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import useSWR from 'swr'
+import { send, useBusy } from '@/lib/api'
 import { Search, Plus, Palette, Pencil, X, Upload, Trash2 } from 'lucide-react'
-import { STYLE_CATEGORIES, formatCurrency } from '@/lib/constants'
+import { formatCurrency } from '@/lib/constants'
+import { useStyleCategories } from '@/lib/useStyleCategories'
+import { useAuth } from '@/lib/auth-context'
 
 interface Style {
   id: string
@@ -24,9 +28,26 @@ const emptyForm = {
 }
 
 export default function StylesPage() {
-  const [styles, setStyles] = useState<Style[]>([])
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [category, setCategory] = useState('All')
+  const { categories, refresh: refreshCategories } = useStyleCategories()
+  const { isOwner } = useAuth()
+  const [showNewCategory, setShowNewCategory] = useState(false)
+  const [newCategory, setNewCategory] = useState('')
+  const [categoryError, setCategoryError] = useState('')
+  const [addingCategory, runAddCategory] = useBusy()
+
+  const addCategory = () => runAddCategory(async () => {
+    const res = await send<{ name: string }>('/api/styles/categories', 'POST', { name: newCategory })
+    if (!res.ok || !res.data) return setCategoryError(res.error || 'Could not add category')
+    await refreshCategories()
+    setCategory(res.data.name)
+    setNewCategory('')
+    setCategoryError('')
+    setShowNewCategory(false)
+  })
+  const [saving, runSave] = useBusy()
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
   const [editingStyle, setEditingStyle] = useState<Style | null>(null)
@@ -35,19 +56,19 @@ export default function StylesPage() {
   const newFileRef = useRef<HTMLInputElement>(null)
   const editFileRef = useRef<HTMLInputElement>(null)
 
-  const load = () => {
-    const params = new URLSearchParams()
-    if (search) params.set('search', search)
-    if (category !== 'All') params.set('category', category)
-    fetch(`/api/styles?${params}`).then(r => r.json()).then(setStyles)
-  }
-
-  useEffect(() => { load() }, [category])
+  useEffect(() => {
+    document.querySelector('[data-active]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [category, categories.length])
 
   useEffect(() => {
-    const t = setTimeout(load, 300)
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
+
+  const params = new URLSearchParams()
+  if (debouncedSearch) params.set('search', debouncedSearch)
+  if (category !== 'All') params.set('category', category)
+  const { data: styles = [], mutate: load, isLoading } = useSWR<Style[]>(`/api/styles?${params}`)
 
   const uploadImage = async (file: File): Promise<string | null> => {
     setUploading(true)
@@ -80,19 +101,14 @@ export default function StylesPage() {
     setUploading(false)
   }
 
-  const createStyle = async () => {
+  const createStyle = () => runSave(async () => {
     if (!form.category) return
-    const res = await fetch('/api/styles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
-    })
-    if (res.ok) {
-      setShowNew(false)
-      setForm({ ...emptyForm })
-      load()
-    }
-  }
+    const res = await send('/api/styles', 'POST', form)
+    if (!res.ok) return alert(res.error)
+    setShowNew(false)
+    setForm({ ...emptyForm })
+    load()
+  })
 
   const startEdit = (style: Style) => {
     setEditingStyle(style)
@@ -110,20 +126,14 @@ export default function StylesPage() {
     })
   }
 
-  const saveEdit = async () => {
+  const saveEdit = () => runSave(async () => {
     if (!editingStyle) return
-    const res = await fetch(`/api/styles/${editingStyle.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editForm),
-    })
-    if (res.ok) {
-      const saved = await res.json()
-      if (saved.ordersUpdated > 0) alert(`Piece count updated on ${saved.ordersUpdated} active order item(s).`)
-      setEditingStyle(null)
-      load()
-    }
-  }
+    const res = await send<{ ordersUpdated: number }>(`/api/styles/${editingStyle.id}`, 'PUT', editForm)
+    if (!res.ok) return alert(res.error)
+    if (res.data && res.data.ordersUpdated > 0) alert(`Piece count updated on ${res.data.ordersUpdated} active order item(s).`)
+    setEditingStyle(null)
+    load()
+  })
 
   const inputClass = "px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
 
@@ -147,7 +157,7 @@ export default function StylesPage() {
             <input type="text" placeholder="Style Code (optional)" value={form.styleCode} onChange={e => setForm(p => ({ ...p, styleCode: e.target.value }))} className={inputClass} />
             <input type="text" placeholder="Style Name (optional)" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inputClass} />
             <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className="px-3 py-2 text-sm border border-border rounded-lg bg-background">
-              {STYLE_CATEGORIES.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <input type="number" placeholder="Price" value={form.price || ''} onChange={e => setForm(p => ({ ...p, price: Number(e.target.value) }))} className={inputClass} />
             <input type="text" placeholder="Fabric" value={form.fabric} onChange={e => setForm(p => ({ ...p, fabric: e.target.value }))} className={inputClass} />
@@ -167,7 +177,7 @@ export default function StylesPage() {
               <div className="flex items-center gap-2">
                 {form.imageUrl ? (
                   <div className="relative w-10 h-10 rounded border border-border overflow-hidden">
-                    <img src={form.imageUrl} alt="" className="w-full h-full object-cover" />
+                    <img loading="lazy" decoding="async" src={form.imageUrl} alt="" className="w-full h-full object-cover" />
                     <button onClick={() => setForm(p => ({ ...p, imageUrl: '' }))} className="absolute -top-1 -right-1 bg-red text-white rounded-full p-0.5"><X className="w-2.5 h-2.5" /></button>
                   </div>
                 ) : null}
@@ -185,7 +195,7 @@ export default function StylesPage() {
           </div>
           <p className="text-xs text-muted-foreground">Style code and name are optional — leave blank for custom garments. Pieces count determines how many production units this style breaks into.</p>
           <div className="flex gap-2">
-            <button onClick={createStyle} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium">Create</button>
+            <button onClick={createStyle} disabled={saving || uploading} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{saving ? 'Creating…' : 'Create'}</button>
             <button onClick={() => setShowNew(false)} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>
@@ -202,10 +212,11 @@ export default function StylesPage() {
             className="w-full pl-10 pr-4 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
           />
         </div>
-        <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
-          {STYLE_CATEGORIES.map(c => (
+        <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto min-w-0 sm:max-w-[60%]">
+          {['All', ...categories].map(c => (
             <button
               key={c}
+              data-active={category === c || undefined}
               onClick={() => setCategory(c)}
               className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
                 category === c ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'
@@ -215,11 +226,44 @@ export default function StylesPage() {
             </button>
           ))}
         </div>
+        {isOwner && (
+          <button
+            onClick={() => { setShowNewCategory(!showNewCategory); setCategoryError('') }}
+            className="shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-border rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            <Plus className="w-4 h-4" /> Category
+          </button>
+        )}
       </div>
+
+      {isOwner && showNewCategory && (
+        <form
+          onSubmit={e => { e.preventDefault(); addCategory() }}
+          className="bg-card border border-border rounded-xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-2"
+        >
+          <label htmlFor="new-category" className="text-sm font-medium shrink-0">New category</label>
+          <input
+            id="new-category"
+            autoFocus
+            maxLength={40}
+            placeholder="e.g. Jodhpuri, Achkan, Nehru Jacket"
+            value={newCategory}
+            onChange={e => { setNewCategory(e.target.value); setCategoryError('') }}
+            className="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
+          />
+          <div className="flex gap-2">
+            <button disabled={addingCategory || newCategory.trim().length < 2} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">
+              {addingCategory ? 'Adding…' : 'Add'}
+            </button>
+            <button type="button" onClick={() => setShowNewCategory(false)} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
+          </div>
+          {categoryError && <p className="text-xs text-red sm:basis-full">{categoryError}</p>}
+        </form>
+      )}
 
       {styles.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">
-          {search || category !== 'All' ? 'No styles match your search.' : 'No styles yet. Add your first style to build the style bank.'}
+          {isLoading ? 'Loading…' : search || category !== 'All' ? 'No styles match your search.' : 'No styles yet. Add your first style to build the style bank.'}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -233,7 +277,7 @@ export default function StylesPage() {
               </button>
               <div className="aspect-square bg-muted flex items-center justify-center">
                 {s.imageUrl ? (
-                  <img src={s.imageUrl} alt={s.name || 'Style'} className="w-full h-full object-cover" />
+                  <img loading="lazy" decoding="async" src={s.imageUrl} alt={s.name || 'Style'} className="w-full h-full object-cover" />
                 ) : (
                   <Palette className="w-8 h-8 text-muted-foreground/30" />
                 )}
@@ -268,7 +312,7 @@ export default function StylesPage() {
               <div className="flex items-center gap-4 mb-2">
                 <div className="w-20 h-20 bg-muted rounded-lg flex items-center justify-center overflow-hidden shrink-0">
                   {editForm.imageUrl ? (
-                    <img src={editForm.imageUrl} alt="" className="w-full h-full object-cover" />
+                    <img loading="lazy" decoding="async" src={editForm.imageUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <Palette className="w-6 h-6 text-muted-foreground/30" />
                   )}
@@ -294,7 +338,7 @@ export default function StylesPage() {
                 <input type="text" placeholder="Style Code" value={editForm.styleCode} onChange={e => setEditForm(p => ({ ...p, styleCode: e.target.value }))} className={inputClass} />
                 <input type="text" placeholder="Style Name" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} className={inputClass} />
                 <select value={editForm.category} onChange={e => setEditForm(p => ({ ...p, category: e.target.value }))} className="px-3 py-2 text-sm border border-border rounded-lg bg-background">
-                  {STYLE_CATEGORIES.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <input type="number" placeholder="Price" value={editForm.price || ''} onChange={e => setEditForm(p => ({ ...p, price: Number(e.target.value) }))} className={inputClass} />
                 <input type="text" placeholder="Fabric" value={editForm.fabric} onChange={e => setEditForm(p => ({ ...p, fabric: e.target.value }))} className={inputClass} />
@@ -312,7 +356,7 @@ export default function StylesPage() {
               </div>
             </div>
             <div className="flex gap-2 px-5 py-4 border-t border-border">
-              <button onClick={saveEdit} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium">Save Changes</button>
+              <button onClick={saveEdit} disabled={saving || uploading} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{saving ? 'Saving…' : 'Save Changes'}</button>
               <button onClick={() => setEditingStyle(null)} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
             </div>
           </div>
