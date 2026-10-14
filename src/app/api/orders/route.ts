@@ -6,7 +6,10 @@ import { hideContactFor } from '@/lib/employees'
 
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status')
-  const where = status && status !== 'All' ? { status } : {}
+  const missingNo = req.nextUrl.searchParams.get('missingNo') === '1'
+  const where = missingNo
+    ? { internalOrderNo: null, status: { not: 'Discarded' } }
+    : status && status !== 'All' ? { status } : {}
 
   const orders = await prisma.order.findMany({
     where,
@@ -18,7 +21,7 @@ export async function GET(req: NextRequest) {
       },
     },
     orderBy: { createdAt: 'desc' },
-    take: 200,
+    take: missingNo ? 2000 : 200,
   })
 
   const role = req.headers.get('x-user-role')

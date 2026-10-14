@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { Search, Ban } from 'lucide-react'
 import { useDiscard } from '@/components/useDiscard'
 import { OrderNoBadge } from '@/components/OrderNoBadge'
+import { BulkOrderNoEditor } from '@/components/BulkOrderNoEditor'
 import { formatCurrency, formatDate, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
@@ -29,6 +30,8 @@ export default function OrdersPage() {
   const [filter, setFilter] = useState('All')
   const [search, setSearch] = useState('')
   const { data: orders = [], isLoading } = useSWR<Order[]>(`/api/orders?status=${filter}`, { refreshInterval: 180000 })
+  const { data: missingNo = [] } = useSWR<Order[]>(canDiscard ? '/api/orders?missingNo=1' : null)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const discard = useDiscard()
 
   const filtered = search
@@ -48,6 +51,20 @@ export default function OrdersPage() {
         <h1 className="text-2xl font-semibold">Orders</h1>
         <p className="hidden sm:block text-sm text-muted-foreground">Orders are created from Estimates</p>
       </div>
+
+      {canDiscard && bulkOpen && (
+        <BulkOrderNoEditor orders={missingNo} onClose={() => setBulkOpen(false)} />
+      )}
+      {canDiscard && !bulkOpen && missingNo.length > 0 && (
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 rounded-xl border border-amber/40 bg-amber/10 px-4 py-3">
+          <p className="flex-1 text-sm">
+            <strong>{missingNo.length}</strong> order{missingNo.length !== 1 ? 's' : ''} {missingNo.length !== 1 ? "don't" : "doesn't"} have an internal order number yet.
+          </p>
+          <button onClick={() => setBulkOpen(true)} className="self-start sm:self-auto px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-accent/90">
+            Add order numbers
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
