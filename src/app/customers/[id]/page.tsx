@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Plus, Ruler, Edit2, Check, X, Printer } from 'lucide-react'
 import { printTailorSheets } from '@/lib/tailorSheet'
 import useSWR from 'swr'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { send, useBusy } from '@/lib/api'
 import { formatCurrency, formatDate, MEASUREMENT_FIELDS } from '@/lib/constants'
 
@@ -51,6 +52,7 @@ interface CustomerData {
   orders: Array<{
     id: string
     orderNumber: number
+    internalOrderNo: string | null
     status: string
     totalAmount: number
     createdAt: string
@@ -95,6 +97,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         .map(j => ({
           jobNumber: j.jobNumber,
           orderNumber: o.orderNumber,
+          internalOrderNo: o.internalOrderNo,
           garmentType: j.garmentType,
           style: j.style ? [j.style.name, j.style.styleCode].filter(Boolean).join(' — ') : null,
           fabric: j.fabricDetails,
@@ -420,7 +423,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 {customer.orders.map(o => (
                   <tr key={o.id} className={`border-b border-border last:border-0 hover:bg-muted/50 ${o.status === 'Discarded' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3">
-                      <Link href={`/orders/${o.id}`} className="text-sm font-semibold hover:underline">#{o.orderNumber}</Link>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <OrderNoBadge no={o.internalOrderNo} />
+                        <Link href={`/orders/${o.id}`} className="text-sm font-semibold hover:underline">#{o.orderNumber}</Link>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-sm">{formatDate(o.createdAt)}</td>
                     <td className="px-4 py-3 text-sm hidden sm:table-cell">{o.jobs.map(j => j.garmentType).join(', ')}</td>

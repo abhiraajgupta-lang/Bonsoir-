@@ -21,6 +21,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (estimate.status === 'Discarded') {
     return NextResponse.json({ error: 'This estimate has been discarded' }, { status: 400 })
   }
+  if (!estimate.internalOrderNo) {
+    return NextResponse.json({ error: 'Add the internal order number to this estimate (Edit) before converting it' }, { status: 400 })
+  }
 
   if (!estimate.customerId) {
     return NextResponse.json({ error: 'Estimate must have a linked customer' }, { status: 400 })
@@ -60,6 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const order = await tx.order.create({
         data: {
           orderNumber,
+          internalOrderNo: estimate.internalOrderNo,
           customerId: estimate.customerId!,
           deliveryDate: estimate.deliveryDate || new Date(),
           channel: estimate.channel || 'In-Store',

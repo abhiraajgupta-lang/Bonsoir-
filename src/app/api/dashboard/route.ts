@@ -13,7 +13,7 @@ export async function GET() {
       where: { status: { not: 'Completed' }, order: { status: 'Active' } },
       select: {
         jobNumber: true, garmentType: true, currentStage: true, deliveryDate: true,
-        order: { select: { orderNumber: true, deliveryDate: true, customer: { select: { name: true } } } },
+        order: { select: { orderNumber: true, internalOrderNo: true, deliveryDate: true, customer: { select: { name: true } } } },
       },
     }),
     prisma.order.aggregate({
@@ -64,6 +64,7 @@ export async function GET() {
       return {
         jobNumber: j.jobNumber,
         orderNumber: j.order.orderNumber,
+        internalOrderNo: j.order.internalOrderNo,
         customerName: j.order.customer.name,
         garmentType: j.garmentType,
         currentStage: j.currentStage,

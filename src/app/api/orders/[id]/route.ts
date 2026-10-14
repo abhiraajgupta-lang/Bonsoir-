@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { cleanOrderNo, orderNoProblem } from '@/lib/orderNo'
 import { hideContactFor } from '@/lib/employees'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -28,9 +29,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const body = await req.json()
 
+  let internalOrderNo: string | undefined
+  if (body.internalOrderNo !== undefined) {
+    const current = await prisma.order.findUnique({ where: { id }, select: { estimateId: true } })
+    if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const err = await orderNoProblem(body.internalOrderNo, { orderId: id, estimateId: current.estimateId })
+    if (err) return NextResponse.json({ error: err }, { status: 400 })
+    internalOrderNo = cleanOrderNo(body.internalOrderNo)
+  }
+
   const order = await prisma.order.update({
     where: { id },
     data: {
+      internalOrderNo,
       eventName: body.eventName,
       deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : undefined,
       salesperson: body.salesperson,
@@ -39,6 +50,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       status: body.status,
     },
   })
+
+  if (internalOrderNo) {
+    await prisma.estimate.updateMany({
+      where: { OR: [{ convertedOrderId: id }, ...(order.estimateId ? [{ id: order.estimateId }] : [])] },
+      data: { internalOrderNo },
+    })
+  }
 
   return NextResponse.json(order)
 }

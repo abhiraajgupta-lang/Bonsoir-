@@ -9,12 +9,12 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const EMPLOYEE_ROLES: Role[] = ['store_manager', 'production_manager', 'designer']
 
-const ALL_PAGES = ['/', '/orders', '/customers', '/styles', '/estimates', '/production', '/trials', '/footfall', '/todos']
+const ALL_PAGES = ['/', '/orders', '/customers', '/styles', '/estimates', '/production', '/trials', '/footfall', '/followups', '/todos']
 
 const PAGE_ACCESS: Record<Role, string[]> = {
   owner: [...ALL_PAGES, '/employees'],
   store_manager: ALL_PAGES,
-  production_manager: ['/orders', '/todos'],
+  production_manager: ['/orders', '/production', '/todos'],
   designer: ['/styles', '/todos'],
 }
 

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import useSWR from 'swr'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { send } from '@/lib/api'
 import Link from 'next/link'
 import { PRODUCTION_STAGES, ORDER_CHANNELS, formatDate, getDeliveryRisk } from '@/lib/constants'
@@ -16,6 +17,7 @@ interface Job {
   order: {
     id: string
     orderNumber: number
+    internalOrderNo: string | null
     deliveryDate: string
     channel: string
     customer: { name: string }
@@ -144,7 +146,8 @@ export default function ProductionPage() {
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${riskDot[risk]}`} />
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <OrderNoBadge no={job.order.internalOrderNo} />
                           <Link href={`/orders/${job.order.id}`} className="text-sm font-semibold hover:underline">
                             #{job.jobNumber}
                           </Link>

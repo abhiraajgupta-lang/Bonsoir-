@@ -12,6 +12,7 @@ import {
   Factory,
   Scissors,
   Footprints,
+  PhoneCall,
   ListTodo,
   Menu,
   X,
@@ -30,6 +31,7 @@ const navItems = [
   { href: '/production', label: 'Production', icon: Factory },
   { href: '/trials', label: 'Trials', icon: Scissors },
   { href: '/footfall', label: 'Footfall', icon: Footprints },
+  { href: '/followups', label: 'Follow-ups', icon: PhoneCall },
   { href: '/todos', label: 'To-Do', icon: ListTodo },
   { href: '/employees', label: 'Employees', icon: UsersRound },
 ]

@@ -1,6 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { ShoppingBag, Scissors, Truck, AlertTriangle, IndianRupee } from 'lucide-react'
 import { formatCurrency } from '@/lib/constants'
 import Link from 'next/link'
@@ -8,6 +9,7 @@ import Link from 'next/link'
 interface AttentionItem {
   jobNumber: string
   orderNumber: number
+  internalOrderNo: string | null
   customerName: string
   garmentType: string
   currentStage: string
@@ -82,6 +84,7 @@ export default function Dashboard() {
                 >
                   <div>
                     <div className="flex items-center gap-2 mb-1">
+                      <OrderNoBadge no={item.internalOrderNo} />
                       <span className="text-sm font-semibold">Job #{item.jobNumber}</span>
                       <span className="text-xs text-muted-foreground">Order #{item.orderNumber}</span>
                     </div>

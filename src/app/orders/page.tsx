@@ -5,12 +5,14 @@ import Link from 'next/link'
 import useSWR from 'swr'
 import { Search, Ban } from 'lucide-react'
 import { useDiscard } from '@/components/useDiscard'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { formatCurrency, formatDate, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
 interface Order {
   id: string
   orderNumber: number
+  internalOrderNo: string | null
   status: string
   eventName: string | null
   deliveryDate: string
@@ -33,6 +35,7 @@ export default function OrdersPage() {
     ? orders.filter(o =>
         o.customer.name.toLowerCase().includes(search.toLowerCase()) ||
         o.orderNumber.toString().includes(search) ||
+        (o.internalOrderNo ?? '').toLowerCase().includes(search.toLowerCase()) ||
         o.customer.mobile.includes(search)
       )
     : orders
@@ -51,7 +54,7 @@ export default function OrdersPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search orders..."
+            placeholder="Search by order no., customer, mobile..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
@@ -117,9 +120,12 @@ export default function OrdersPage() {
                 return (
                   <tr key={order.id} className={`border-b border-border last:border-0 hover:bg-muted/50 transition-colors ${order.status === 'Discarded' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3">
-                      <Link href={`/orders/${order.id}`} className={`text-sm font-semibold hover:underline ${order.status === 'Discarded' ? 'line-through' : ''}`}>
-                        #{order.orderNumber}
-                      </Link>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <OrderNoBadge no={order.internalOrderNo} />
+                        <Link href={`/orders/${order.id}`} className={`hover:underline ${order.status === 'Discarded' ? 'line-through' : ''} ${order.internalOrderNo ? 'text-xs text-muted-foreground font-medium' : 'text-sm font-semibold'}`}>
+                          #{order.orderNumber}
+                        </Link>
+                      </div>
                       {order.status === 'Discarded' && (
                         <span className="lg:hidden ml-1.5 text-[10px] font-semibold uppercase text-red">Discarded</span>
                       )}

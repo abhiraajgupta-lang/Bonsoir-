@@ -8,6 +8,7 @@ import { send } from '@/lib/api'
 import { useDiscard } from '@/components/useDiscard'
 import { formatCurrency, formatDate, PAYMENT_METHODS, ORDER_CHANNELS, pieceSetSummary } from '@/lib/constants'
 import { PieceSetSelect } from '@/components/PieceSetSelect'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { useRouter } from 'next/navigation'
 import { BRAND_LOGO_SVG } from '@/lib/brand'
 import CustomerPicker from '@/components/CustomerPicker'
@@ -44,6 +45,7 @@ interface GarmentItem {
 interface EstimateData {
   id: string
   estimateNumber: number
+  internalOrderNo: string | null
   customerId: string | null
   customerName: string
   mobile: string | null
@@ -80,6 +82,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
 
   const [garments, setGarments] = useState<GarmentItem[]>([])
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null)
+  const [editOrderNo, setEditOrderNo] = useState('')
   const [trialDate, setTrialDate] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
   const [notes, setNotes] = useState('')
@@ -106,6 +109,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
     try { items = data.items ? JSON.parse(data.items) : [] } catch { /* empty */ }
     setGarments(items.length > 0 ? items : [{ garment: '', amount: 0 }])
     setEditCustomer(data.customer)
+    setEditOrderNo(data.internalOrderNo || '')
     setTrialDate(data.trialDate ? data.trialDate.slice(0, 10) : '')
     setDeliveryDate(data.deliveryDate ? data.deliveryDate.slice(0, 10) : '')
     setNotes(data.notes || '')
@@ -157,6 +161,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
     setSaving(true)
     try {
       const res = await send(`/api/estimates/${id}`, 'PUT', {
+        internalOrderNo: editOrderNo,
         customerId: editCustomer?.id ?? estimate.customerId,
         customerName: editCustomer?.name ?? estimate.customerName,
         mobile: editCustomer?.mobile ?? estimate.mobile,
@@ -235,6 +240,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
       <div class="title"><h2>ESTIMATE</h2></div>
       <div class="meta">
         <div>
+          ${estimate.internalOrderNo ? `<strong>Order No.:</strong> ${estimate.internalOrderNo}<br>` : ''}
           <strong>Estimate #:</strong> EST-${String(estimate.estimateNumber).padStart(4, '0')}<br>
           <strong>Date:</strong> ${dateStr}
           ${estimate.trialDate ? `<br><strong>Trial Date:</strong> ${new Date(estimate.trialDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
@@ -281,6 +287,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2">
+            <OrderNoBadge no={estimate.internalOrderNo} size="lg" />
             <h1 className={`text-2xl font-semibold ${isDiscarded ? 'line-through text-muted-foreground' : ''}`}>EST-{String(estimate.estimateNumber).padStart(4, '0')}</h1>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[estimate.status] || 'bg-gray-100 text-gray-600'}`}>
               {estimate.status}
@@ -336,6 +343,19 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
       {editing ? (
         <div className="bg-card border border-border rounded-xl p-5 space-y-5">
           <div>
+            <label htmlFor="edit-order-no" className="block text-xs font-semibold uppercase mb-1">
+              Internal Order No. <span className="text-red">*</span>
+            </label>
+            <input
+              id="edit-order-no"
+              maxLength={30}
+              autoComplete="off"
+              placeholder="e.g. 2041"
+              value={editOrderNo}
+              onChange={e => setEditOrderNo(e.target.value.toUpperCase())}
+              className="w-full sm:w-72 mb-4 px-3 py-2 text-base font-semibold tracking-wide border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+            {estimate.convertedOrderId && <p className="-mt-3 mb-4 text-xs text-muted-foreground">Changing it also updates the order made from this estimate.</p>}
             <label className="block text-xs font-medium text-muted-foreground uppercase mb-2">Customer</label>
             {editCustomer ? (
               <div className="bg-muted rounded-lg p-3 flex items-center justify-between">
@@ -484,7 +504,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           <div className="flex gap-2">
-            <button onClick={saveEstimate} disabled={saving || !!advanceError || !editCustomer} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving...' : 'Save Changes'}</button>
+            <button onClick={saveEstimate} disabled={saving || !!advanceError || !editCustomer || !editOrderNo.trim()} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving...' : 'Save Changes'}</button>
             <button onClick={() => { setEditing(false); populateForm(estimate) }} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>

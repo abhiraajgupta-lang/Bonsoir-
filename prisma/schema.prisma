@@ -66,6 +66,7 @@ model MeasurementSet {
 model Order {
   id            String   @id @default(cuid())
   orderNumber   Int      @unique
+  internalOrderNo String?
   customerId    String
   eventName     String?
   deliveryDate  DateTime
@@ -89,6 +90,8 @@ model Order {
   customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   jobs     Job[]
   payments Payment[]
+
+  @@index([internalOrderNo])
 }
 
 model Job {
@@ -184,6 +187,7 @@ model Payment {
 model Estimate {
   id             String   @id @default(cuid())
   estimateNumber Int      @unique
+  internalOrderNo String?
   customerId     String?
   customerName   String
   mobile         String?
@@ -208,6 +212,8 @@ model Estimate {
   updatedAt      DateTime @updatedAt
 
   customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([internalOrderNo])
 }
 
 model Footfall {
@@ -272,4 +278,19 @@ model StyleCategory {
   name      String   @unique
   createdBy String?
   createdAt DateTime @default(now())
+}
+
+model FollowUp {
+  id             String   @id @default(cuid())
+  name           String
+  mobile         String
+  channel        String   @default("WhatsApp")
+  intent         String   @default("Store Visit")
+  followUpStatus String   @default("New")
+  notes          String?
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([followUpStatus])
 }

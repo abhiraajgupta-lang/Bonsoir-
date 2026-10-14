@@ -132,3 +132,7 @@ export function pieceSetSummary(key?: string | null) {
   const set = getPieceSet(key)
   return set.key === 'upper' ? '' : `${set.pieces} pc: ${set.parts.join(' + ')}`
 }
+
+export const FOLLOW_UP_CHANNELS = ['WhatsApp', 'Call'] as const
+export const FOLLOW_UP_INTENTS = ['Store Visit', 'Online Order', 'Undecided'] as const
+export const FOLLOW_UP_STATUSES = ['New', 'Contacted', 'Interested', 'Visit Scheduled', 'Converted', 'Not Interested'] as const

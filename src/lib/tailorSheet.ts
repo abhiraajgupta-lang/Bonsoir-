@@ -4,6 +4,7 @@ import { MEASUREMENT_FIELDS } from '@/lib/constants'
 export interface TailorGarment {
   jobNumber: string
   orderNumber?: number
+  internalOrderNo?: string | null
   garmentType: string
   style?: string | null
   fabric?: string | null
@@ -43,7 +44,7 @@ function sheetHtml(sheet: TailorSheet) {
       <tr>
         <td class="num">${i + 1}</td>
         <td><strong>${esc(g.garmentType)}</strong>${g.style ? `<div class="sub">Style: ${esc(g.style)}</div>` : ''}</td>
-        <td class="mono">${esc(g.jobNumber)}${g.orderNumber ? `<div class="sub">Order #${esc(g.orderNumber)}</div>` : ''}</td>
+        <td class="mono">${g.internalOrderNo ? `<div class="ono">No. ${esc(g.internalOrderNo)}</div>` : ''}${esc(g.jobNumber)}${g.orderNumber ? `<div class="sub">Order #${esc(g.orderNumber)}</div>` : ''}</td>
         <td>${esc(g.fabric) || '<span class="muted">—</span>'}</td>
         <td>${[g.designNotes, g.jobNotes].filter(Boolean).map(esc).join('<br>') || '<span class="muted">—</span>'}</td>
         <td class="nowrap">${fmtDate(g.deliveryDate) || '<span class="muted">—</span>'}</td>
@@ -63,6 +64,10 @@ function sheetHtml(sheet: TailorSheet) {
     <div class="who">
       <div><label>Customer</label><p class="name">${esc(sheet.customerName)}</p></div>
       ${sheet.customerCode ? `<div><label>Customer ID</label><p>${esc(sheet.customerCode)}</p></div>` : ''}
+      ${(() => {
+        const nos = [...new Set(sheet.garments.map(g => g.internalOrderNo).filter(Boolean))]
+        return nos.length ? `<div><label>Order No.</label><p class="ono-big">${nos.map(esc).join(', ')}</p></div>` : ''
+      })()}
       <div><label>Measurements</label><p>${m ? `Version ${esc(m.version ?? '')}${m.date ? ` · taken ${fmtDate(m.date)}` : ''} · in inches` : 'Not recorded — fill in by hand'}</p></div>
     </div>
 
@@ -115,6 +120,8 @@ export function printTailorSheets(sheets: TailorSheet[]) {
     .sub { font-size: 10.5px; color: #666; margin-top: 2px; }
     .mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; white-space: nowrap; }
     .nowrap { white-space: nowrap; }
+    .ono { display: inline-block; background: #111; color: #fff; font-weight: 700; font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-bottom: 3px; font-family: 'Segoe UI', system-ui, sans-serif; }
+    .who .ono-big { font-size: 17px; font-weight: 800; letter-spacing: 0.5px; }
     .muted { color: #aaa; }
     .center { text-align: center; padding: 14px; }
     .groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }

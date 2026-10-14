@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { cleanOrderNo, orderNoProblem } from '@/lib/orderNo'
 import { createJobsForItem, getStylePieces } from '@/lib/jobs'
 import { hideContactFor } from '@/lib/employees'
 
@@ -26,6 +27,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
+  if (body.internalOrderNo) {
+    const err = await orderNoProblem(body.internalOrderNo)
+    if (err) return NextResponse.json({ error: err }, { status: 400 })
+  }
 
   const counter = await prisma.counter.upsert({
     where: { id: 'order' },
@@ -50,6 +55,7 @@ export async function POST(req: NextRequest) {
   const order = await prisma.order.create({
     data: {
       orderNumber,
+      internalOrderNo: body.internalOrderNo ? cleanOrderNo(body.internalOrderNo) : null,
       customerId: body.customerId,
       eventName: body.eventName || null,
       deliveryDate: new Date(body.deliveryDate),

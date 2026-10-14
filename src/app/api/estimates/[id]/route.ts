@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { cleanOrderNo, orderNoProblem } from '@/lib/orderNo'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -15,6 +16,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json()
+  const current = await prisma.estimate.findUnique({ where: { id }, select: { convertedOrderId: true } })
+  if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (body.internalOrderNo !== undefined) {
+    const err = await orderNoProblem(body.internalOrderNo, { estimateId: id, orderId: current.convertedOrderId })
+    if (err) return NextResponse.json({ error: err }, { status: 400 })
+  }
+  const internalOrderNo = body.internalOrderNo !== undefined ? cleanOrderNo(body.internalOrderNo) : undefined
 
   const totalAmount = body.totalAmount ?? 0
   const discountType = body.discountType || null
@@ -32,6 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const estimate = await prisma.estimate.update({
     where: { id },
     data: {
+      internalOrderNo,
       customerId: body.customerId || null,
       customerName: body.customerName,
       mobile: body.mobile || null,
@@ -50,6 +59,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       notes: body.notes || null,
     },
   })
+
+  if (internalOrderNo && current.convertedOrderId) {
+    await prisma.order.update({ where: { id: current.convertedOrderId }, data: { internalOrderNo } })
+  }
 
   return NextResponse.json(estimate)
 }

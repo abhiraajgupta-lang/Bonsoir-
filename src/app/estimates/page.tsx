@@ -7,6 +7,7 @@ import { useDiscard } from '@/components/useDiscard'
 import { Plus, FileText, ArrowRight, Trash2, Printer, Percent, IndianRupee, Ban } from 'lucide-react'
 import { formatCurrency, formatDate, PAYMENT_METHODS, ORDER_CHANNELS, pieceSetSummary } from '@/lib/constants'
 import { PieceSetSelect } from '@/components/PieceSetSelect'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { useRouter } from 'next/navigation'
 import { BRAND_LOGO_SVG } from '@/lib/brand'
 import CustomerPicker from '@/components/CustomerPicker'
@@ -43,6 +44,7 @@ interface GarmentItem {
 interface Estimate {
   id: string
   estimateNumber: number
+  internalOrderNo: string | null
   customerName: string
   mobile: string | null
   trialDate: string | null
@@ -73,6 +75,8 @@ export default function EstimatesPage() {
 
   const { canDiscard } = useAuth()
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [internalOrderNo, setInternalOrderNo] = useState('')
+  const [formError, setFormError] = useState('')
 
   const [garments, setGarments] = useState<GarmentItem[]>([{ garment: '', amount: 0 }])
   const [trialDate, setTrialDate] = useState('')
@@ -121,6 +125,8 @@ export default function EstimatesPage() {
 
   const resetForm = () => {
     setSelectedCustomer(null)
+    setInternalOrderNo('')
+    setFormError('')
     setGarments([{ garment: '', amount: 0 }])
     setTrialDate('')
     setDeliveryDate('')
@@ -158,7 +164,9 @@ export default function EstimatesPage() {
     if (garments.every(g => !g.garment)) return
     if (advanceAmount > netPayable) return
 
+    if (!internalOrderNo.trim()) return setFormError('Enter the internal order number')
     const res = await send('/api/estimates', 'POST', {
+      internalOrderNo,
       customerId: selectedCustomer.id,
       customerName: selectedCustomer.name,
       mobile: selectedCustomer.mobile,
@@ -174,7 +182,7 @@ export default function EstimatesPage() {
       notes: notes || null,
       createdAt: createdAt || null,
     })
-    if (!res.ok) return alert(res.error)
+    if (!res.ok) return setFormError(res.error || 'Could not create estimate')
     setShowNew(false)
     resetForm()
     load()
@@ -239,6 +247,7 @@ export default function EstimatesPage() {
       <div class="title"><h2>ESTIMATE</h2></div>
       <div class="meta">
         <div>
+          ${estimate.internalOrderNo ? `<strong>Order No.:</strong> ${estimate.internalOrderNo}<br>` : ''}
           <strong>Estimate #:</strong> EST-${String(estimate.estimateNumber).padStart(4, '0')}<br>
           <strong>Date:</strong> ${dateStr}
           ${estimate.trialDate ? `<br><strong>Trial Date:</strong> ${new Date(estimate.trialDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
@@ -298,6 +307,23 @@ export default function EstimatesPage() {
       {showNew && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6 space-y-5">
           <h2 className="text-lg font-semibold">New Estimate</h2>
+
+          <div className="rounded-lg border-2 border-accent/80 bg-muted/40 p-3 sm:p-4">
+            <label htmlFor="internal-order-no" className="block text-xs font-semibold uppercase tracking-wide mb-1">
+              Internal Order No. <span className="text-red">*</span>
+            </label>
+            <p className="text-xs text-muted-foreground mb-2">Your production tracking number. It appears on the order, every piece, production stages and printouts.</p>
+            <input
+              id="internal-order-no"
+              required
+              maxLength={30}
+              autoComplete="off"
+              placeholder="e.g. 2041 or BS-2041"
+              value={internalOrderNo}
+              onChange={e => { setInternalOrderNo(e.target.value.toUpperCase()); setFormError('') }}
+              className="w-full sm:w-72 px-3 py-2.5 text-base font-semibold tracking-wide border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
 
           <div>
             <label className="block text-xs font-medium text-muted-foreground uppercase mb-2">Customer *</label>
@@ -500,8 +526,9 @@ export default function EstimatesPage() {
 
           <textarea placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-ring/20" />
 
+          {formError && <p className="text-sm text-red">{formError}</p>}
           <div className="flex gap-2">
-            <button onClick={createEstimate} disabled={creating || !selectedCustomer || garments.every(g => !g.garment) || !!advanceError} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{creating ? 'Creating…' : 'Create Estimate'}</button>
+            <button onClick={createEstimate} disabled={creating || !internalOrderNo.trim() || !selectedCustomer || garments.every(g => !g.garment) || !!advanceError} className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">{creating ? 'Creating…' : 'Create Estimate'}</button>
             <button onClick={() => { setShowNew(false); resetForm() }} className="px-4 py-2 border border-border rounded-lg text-sm">Cancel</button>
           </div>
         </div>
@@ -527,6 +554,7 @@ export default function EstimatesPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <FileText className="w-4 h-4 text-muted-foreground" />
+                      <OrderNoBadge no={e.internalOrderNo} />
                       <span className={`text-sm font-semibold ${e.status === 'Discarded' ? 'line-through' : ''}`}>EST-{String(e.estimateNumber).padStart(4, '0')}</span>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[e.status] || 'bg-gray-100 text-gray-600'}`}>
                         {e.status}

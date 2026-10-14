@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import useSWR from 'swr'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import Link from 'next/link'
 import { Scissors } from 'lucide-react'
 import { formatDate } from '@/lib/constants'
@@ -18,6 +19,7 @@ interface Trial {
     order: {
       id: string
       orderNumber: number
+      internalOrderNo: string | null
       customer: { name: string }
     }
   }
@@ -69,8 +71,9 @@ export default function TrialsPage() {
             <div key={t.id} className="bg-card border border-border rounded-xl p-5 hover:shadow-sm transition-shadow">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <Scissors className="w-4 h-4 text-muted-foreground" />
+                    <OrderNoBadge no={t.job.order.internalOrderNo} />
                     <Link href={`/orders/${t.job.order.id}`} className="text-sm font-semibold hover:underline">
                       Job #{t.job.jobNumber}
                     </Link>

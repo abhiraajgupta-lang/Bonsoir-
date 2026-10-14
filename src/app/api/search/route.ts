@@ -18,7 +18,10 @@ export async function GET(req: NextRequest) {
     }),
     prisma.order.findMany({
       where: {
-        orderNumber: isNaN(Number(q)) ? undefined : Number(q),
+        OR: [
+          { internalOrderNo: { contains: q, mode: 'insensitive' as const } },
+          ...(isNaN(Number(q)) ? [] : [{ orderNumber: Number(q) }]),
+        ],
       },
       include: { customer: true },
       take: 5,
@@ -27,6 +30,7 @@ export async function GET(req: NextRequest) {
       where: {
         OR: [
           { jobNumber: { contains: q, mode: 'insensitive' as const } },
+          { order: { internalOrderNo: { contains: q, mode: 'insensitive' as const } } },
         ],
       },
       include: { order: { include: { customer: true } } },
@@ -46,6 +50,7 @@ export async function GET(req: NextRequest) {
         OR: [
           { customerName: { contains: q, mode: 'insensitive' as const } },
           { mobile: { contains: q, mode: 'insensitive' as const } },
+          { internalOrderNo: { contains: q, mode: 'insensitive' as const } },
           ...(isNaN(Number(q)) ? [] : [{ estimateNumber: Number(q) }]),
         ],
       },
@@ -84,14 +89,14 @@ export async function GET(req: NextRequest) {
     ...orders.map(o => ({
       type: 'order' as const,
       id: o.id,
-      title: `Order #${o.orderNumber}`,
+      title: o.internalOrderNo ? `Order No. ${o.internalOrderNo} · #${o.orderNumber}` : `Order #${o.orderNumber}`,
       subtitle: o.customer.name,
       href: `/orders/${o.id}`,
     })),
     ...jobs.map(j => ({
       type: 'job' as const,
       id: j.id,
-      title: `Job ${j.jobNumber}`,
+      title: j.order.internalOrderNo ? `Order No. ${j.order.internalOrderNo} · Job ${j.jobNumber}` : `Job ${j.jobNumber}`,
       subtitle: `${j.garmentType} · ${j.order.customer.name}`,
       href: `/orders/${j.orderId}`,
     })),
@@ -105,7 +110,7 @@ export async function GET(req: NextRequest) {
     ...estimates.map(e => ({
       type: 'estimate' as const,
       id: e.id,
-      title: `EST-${String(e.estimateNumber).padStart(4, '0')}`,
+      title: `EST-${String(e.estimateNumber).padStart(4, '0')}${e.internalOrderNo ? ` · Order No. ${e.internalOrderNo}` : ''}`,
       subtitle: `${e.customerName} · ${e.status}`,
       href: `/estimates/${e.id}`,
     })),

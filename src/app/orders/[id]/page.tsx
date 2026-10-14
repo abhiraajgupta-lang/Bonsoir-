@@ -7,6 +7,7 @@ import { printTailorSheets, TailorSheet } from '@/lib/tailorSheet'
 import useSWR from 'swr'
 import { send, useBusy } from '@/lib/api'
 import { useDiscard } from '@/components/useDiscard'
+import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { PRODUCTION_STAGES, PAYMENT_METHODS, TRIAL_OUTCOMES, formatCurrency, formatDate, formatDateTime, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
@@ -15,6 +16,7 @@ type MeasurementSet = { id: string; customerId: string; version: number; date: s
 interface OrderData {
   id: string
   orderNumber: number
+  internalOrderNo: string | null
   status: string
   discardedAt: string | null
   discardedBy: string | null
@@ -70,6 +72,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { data: order, mutate: load } = useSWR<OrderData>(`/api/orders/${id}`)
   const discard = useDiscard()
   const [saving, runSave] = useBusy()
+  const [editingNo, setEditingNo] = useState(false)
+  const [orderNoDraft, setOrderNoDraft] = useState('')
+  const [orderNoError, setOrderNoError] = useState('')
   const [showPayment, setShowPayment] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('Cash')
@@ -85,6 +90,14 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const isDiscarded = order.status === 'Discarded'
+
+  const saveOrderNo = () => runSave(async () => {
+    const res = await send(`/api/orders/${order.id}`, 'PUT', { internalOrderNo: orderNoDraft })
+    if (!res.ok) return setOrderNoError(res.error || 'Could not save')
+    setEditingNo(false)
+    setOrderNoError('')
+    load()
+  })
 
   const printForTailor = () => {
     const sheets = new Map<string, TailorSheet>()
@@ -103,6 +116,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       sheets.get(ownerId)!.garments.push({
         jobNumber: job.jobNumber,
         orderNumber: order.orderNumber,
+        internalOrderNo: order.internalOrderNo,
         garmentType: job.garmentType,
         style: job.style ? [job.style.name, job.style.styleCode].filter(Boolean).join(' — ') : null,
         fabric: job.fabricDetails,
@@ -165,6 +179,40 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6">
         <div>
+          {editingNo ? (
+            <form onSubmit={e => { e.preventDefault(); saveOrderNo() }} className="mb-2">
+              <label htmlFor="order-no" className="block text-xs font-semibold uppercase mb-1">Internal Order No.</label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  id="order-no"
+                  autoFocus
+                  maxLength={30}
+                  value={orderNoDraft}
+                  onChange={e => { setOrderNoDraft(e.target.value.toUpperCase()); setOrderNoError('') }}
+                  className="w-48 px-3 py-1.5 text-base font-semibold tracking-wide border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
+                />
+                <button disabled={saving || !orderNoDraft.trim()} className="px-3 py-1.5 bg-accent text-accent-foreground rounded-lg text-sm font-medium disabled:opacity-40">Save</button>
+                <button type="button" onClick={() => { setEditingNo(false); setOrderNoError('') }} className="px-3 py-1.5 border border-border rounded-lg text-sm">Cancel</button>
+              </div>
+              {orderNoError && <p className="text-xs text-red mt-1">{orderNoError}</p>}
+            </form>
+          ) : (
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              {order.internalOrderNo ? (
+                <OrderNoBadge no={order.internalOrderNo} size="lg" />
+              ) : (
+                <span className="text-xs font-medium text-red">No internal order number</span>
+              )}
+              {canDiscard && !isDiscarded && (
+                <button
+                  onClick={() => { setOrderNoDraft(order.internalOrderNo || ''); setEditingNo(true) }}
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                >
+                  {order.internalOrderNo ? 'Change' : 'Add order no.'}
+                </button>
+              )}
+            </div>
+          )}
           <h1 className={`text-2xl font-semibold ${isDiscarded ? 'line-through text-muted-foreground' : ''}`}>Order #{order.orderNumber}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {canSeeCustomerContact ? (
@@ -247,6 +295,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2">
+                        <OrderNoBadge no={order.internalOrderNo} size="xs" />
                         <h3 className="font-semibold">#{job.jobNumber}</h3>
                         <span className="text-sm text-muted-foreground">{job.garmentType}</span>
                         {job.style && (

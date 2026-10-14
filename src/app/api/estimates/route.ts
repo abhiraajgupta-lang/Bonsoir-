@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { cleanOrderNo, orderNoProblem } from '@/lib/orderNo'
 
 export async function GET() {
   const estimates = await prisma.estimate.findMany({
@@ -13,6 +14,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
+  const orderNoError = await orderNoProblem(body.internalOrderNo)
+  if (orderNoError) return NextResponse.json({ error: orderNoError }, { status: 400 })
 
   const counter = await prisma.counter.upsert({
     where: { id: 'estimate' },
@@ -36,6 +39,7 @@ export async function POST(req: NextRequest) {
   const estimate = await prisma.estimate.create({
     data: {
       estimateNumber: counter.value,
+      internalOrderNo: cleanOrderNo(body.internalOrderNo),
       customerId: body.customerId || null,
       customerName: body.customerName,
       mobile: body.mobile || null,
