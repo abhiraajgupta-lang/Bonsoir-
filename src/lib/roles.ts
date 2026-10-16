@@ -50,6 +50,7 @@ export function canAccessApi(role: Role, path: string, method: string) {
   if (path === '/api/todos' && method === 'POST') return false
   if (path === '/api/styles/categories' && method !== 'GET') return false
   if (/^\/api\/(orders|estimates)\/[^/]+\/discard$/.test(path) && !canDiscard(role)) return false
+  if (/^\/api\/orders\/[^/]+\/deliver$/.test(path) && !canDiscard(role)) return false
   if (role === 'production_manager' && matches(path, '/api/orders') && method !== 'GET') return false
   const allowed = API_ACCESS[role]
   return allowed === 'all' || allowed.some(p => matches(path, p))

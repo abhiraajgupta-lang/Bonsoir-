@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
   const missingNo = req.nextUrl.searchParams.get('missingNo') === '1'
   const where = missingNo
     ? { internalOrderNo: null, status: { not: 'Discarded' } }
+    : status === 'Open' ? { status: { not: 'Completed' } }
     : status && status !== 'All' ? { status } : {}
 
   const orders = await prisma.order.findMany({

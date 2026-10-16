@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 import { cleanOrderNo, orderNoProblem } from '@/lib/orderNo'
+import { withNewKeys } from '@/lib/estimateItems'
 
 export async function GET() {
   const estimates = await prisma.estimate.findMany({
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
       mobile: body.mobile || null,
       trialDate: body.trialDate ? new Date(body.trialDate) : null,
       deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : null,
-      items: body.items ? JSON.stringify(body.items) : null,
+      items: Array.isArray(body.items) ? JSON.stringify(withNewKeys(body.items)) : null,
       totalAmount,
       discountType,
       discountValue,

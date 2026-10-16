@@ -2,11 +2,12 @@
 
 import { useState, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Plus, IndianRupee, Ban, Printer } from 'lucide-react'
+import { ArrowLeft, Plus, IndianRupee, Ban, Printer, PackageCheck } from 'lucide-react'
 import { printTailorSheets, TailorSheet } from '@/lib/tailorSheet'
 import useSWR from 'swr'
 import { send, useBusy } from '@/lib/api'
 import { useDiscard } from '@/components/useDiscard'
+import { useConfirm } from '@/components/ConfirmDialog'
 import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { PRODUCTION_STAGES, PAYMENT_METHODS, TRIAL_OUTCOMES, formatCurrency, formatDate, formatDateTime, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
@@ -19,6 +20,7 @@ interface OrderData {
   internalOrderNo: string | null
   status: string
   discardedAt: string | null
+  deliveredAt: string | null
   discardedBy: string | null
   eventName: string | null
   deliveryDate: string
@@ -71,6 +73,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { canSeeCustomerContact, canDiscard } = useAuth()
   const { data: order, mutate: load } = useSWR<OrderData>(`/api/orders/${id}`)
   const discard = useDiscard()
+  const confirm = useConfirm()
   const [saving, runSave] = useBusy()
   const [editingNo, setEditingNo] = useState(false)
   const [orderNoDraft, setOrderNoDraft] = useState('')
@@ -90,6 +93,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const isDiscarded = order.status === 'Discarded'
+
+  const markDelivered = async () => {
+    const pending = order.jobs.filter(j => j.currentStage !== 'Delivered').length
+    const ok = await confirm({
+      title: `Mark Order #${order.orderNumber} as delivered?`,
+      message: `${pending ? `${pending} piece${pending !== 1 ? 's' : ''} not yet at "Delivered" will be moved there. ` : ''}${order.balanceDue > 0 ? `Note: ${formatCurrency(order.balanceDue)} is still due. ` : ''}The order moves to the Delivered Orders tab.`,
+      confirmLabel: 'Mark delivered',
+    })
+    if (!ok) return
+    runSave(async () => {
+      const res = await send(`/api/orders/${order.id}/deliver`, 'POST')
+      if (!res.ok) return alert(res.error)
+      load()
+    })
+  }
 
   const saveOrderNo = () => runSave(async () => {
     const res = await send(`/api/orders/${order.id}`, 'PUT', { internalOrderNo: orderNoDraft })
@@ -235,6 +253,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           )}
           {canDiscard && order.status === 'Active' && (
             <button
+              onClick={markDelivered}
+              disabled={saving}
+              className="flex items-center gap-1 px-3 py-1 bg-accent text-accent-foreground rounded-lg text-xs font-medium disabled:opacity-50"
+            >
+              <PackageCheck className="w-3.5 h-3.5" /> Mark as Delivered
+            </button>
+          )}
+          {canDiscard && order.status === 'Active' && (
+            <button
               onClick={() => discard('order', order.id, `Order #${order.orderNumber}`)}
               className="flex items-center gap-1 px-3 py-1 border border-border rounded-lg text-xs font-medium text-red hover:bg-red/10"
             >
@@ -244,10 +271,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <span className={`inline-flex px-2.5 py-1 rounded text-xs font-semibold ${
             order.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : isDiscarded ? 'bg-red/10 text-red' : 'bg-gray-100 text-gray-600'
           }`}>
-            {order.status}
+            {order.status === 'Completed' ? 'Delivered' : order.status}
           </span>
         </div>
       </div>
+
+      {order.status === 'Completed' && (
+        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-green/30 bg-green/5 px-4 py-3 text-sm">
+          <PackageCheck className="w-4 h-4 text-green shrink-0" />
+          <p className="flex-1">
+            Delivered{order.deliveredAt ? ` on ${formatDate(order.deliveredAt)}` : ''}. This order is kept under{' '}
+            <Link href="/orders/delivered" className="underline underline-offset-2">Delivered Orders</Link>.
+          </p>
+          {order.balanceDue > 0 && <span className="text-red font-medium">Balance due {formatCurrency(order.balanceDue)}</span>}
+        </div>
+      )}
 
       {isDiscarded && (
         <div className="mb-6 flex items-start gap-2 rounded-xl border border-red/30 bg-red/5 px-4 py-3 text-sm">

@@ -29,6 +29,7 @@ interface JobItem {
   designNotes?: string | null
   jobNotes?: string | null
   jobMeasurements?: string | null
+  itemKey?: string | null
 }
 
 export async function createJobsForItem(tx: Tx, item: JobItem) {
@@ -53,6 +54,7 @@ export async function createJobsForItem(tx: Tx, item: JobItem) {
         designNotes: item.designNotes || null,
         jobNotes: item.jobNotes || null,
         jobMeasurements: item.jobMeasurements || null,
+        estimateItemKey: item.itemKey || null,
         currentStage: 'Order Placed',
       },
     })

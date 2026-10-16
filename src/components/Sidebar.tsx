@@ -12,6 +12,7 @@ import {
   Factory,
   Scissors,
   Footprints,
+  PackageCheck,
   PhoneCall,
   ListTodo,
   Menu,
@@ -25,6 +26,7 @@ import { useAuth, ROLE_LABELS } from '@/lib/auth-context'
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/orders/delivered', label: 'Delivered Orders', icon: PackageCheck },
   { href: '/customers', label: 'Customers', icon: Users },
   { href: '/styles', label: 'Styles', icon: Palette },
   { href: '/estimates', label: 'Estimates', icon: FileText },
@@ -77,7 +79,10 @@ export function Sidebar({ pendingTasks = 0 }: { pendingTasks?: number }) {
 
         <nav className="flex-1 py-4 space-y-0.5 px-2 overflow-y-auto">
           {filteredNav.map(({ href, label, icon: Icon }) => {
-            const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
+            const best = filteredNav
+              .filter(n => (n.href === '/' ? pathname === '/' : pathname === n.href || pathname.startsWith(n.href + '/')))
+              .sort((a, b) => b.href.length - a.href.length)[0]
+            const active = best?.href === href
             return (
               <Link
                 key={href}

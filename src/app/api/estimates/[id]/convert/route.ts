@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 import { createJobsForItem, getStylePieces } from '@/lib/jobs'
 import { getPieceSet } from '@/lib/constants'
+import { parseItems, withStoredKeys } from '@/lib/estimateItems'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -38,12 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    let items: Array<{ garment: string; amount: number; styleId?: string; pieces?: number; pieceSet?: string; customerId?: string; customerName?: string }> = []
-    try {
-      items = estimate.items ? JSON.parse(estimate.items) : []
-    } catch {
-      items = []
-    }
+    const items = withStoredKeys(parseItems(estimate.items))
 
     const measurementFor = new Map<string, string | null>()
     for (const cid of new Set([estimate.customerId, ...items.map(i => i.customerId).filter((c): c is string => !!c)])) {
@@ -94,6 +90,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           measurementSetId: measurementFor.get(item.customerId || estimate.customerId!) ?? null,
           deliveryDate: estimate.deliveryDate,
           jobNotes: forOther ? `For: ${item.customerName}` : null,
+          itemKey: item.uid,
         })
       }
       return order

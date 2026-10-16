@@ -25,6 +25,9 @@ export const STYLE_CATEGORIES = [
   'Trouser',
   'Waistcoat',
   'Indo-Western',
+  'Tuxedo',
+  'Kurta Jacket Set',
+  'Shorts',
   'Other',
 ] as const
 

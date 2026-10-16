@@ -6,6 +6,7 @@ import { ArrowLeft, Printer, ArrowRight, Plus, Trash2, Percent, IndianRupee, Ban
 import useSWR from 'swr'
 import { send } from '@/lib/api'
 import { useDiscard } from '@/components/useDiscard'
+import { useConfirm } from '@/components/ConfirmDialog'
 import { formatCurrency, formatDate, PAYMENT_METHODS, ORDER_CHANNELS, pieceSetSummary } from '@/lib/constants'
 import { PieceSetSelect } from '@/components/PieceSetSelect'
 import { OrderNoBadge } from '@/components/OrderNoBadge'
@@ -33,6 +34,7 @@ interface StyleOption {
 }
 
 interface GarmentItem {
+  uid?: string
   garment: string
   amount: number
   styleId?: string
@@ -74,6 +76,9 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
   const { id } = use(params)
   const router = useRouter()
   const { canDiscard } = useAuth()
+  const confirm = useConfirm()
+  const [manualTotal, setManualTotal] = useState(0)
+  const [syncNote, setSyncNote] = useState('')
   const { data: estimate, mutate: load } = useSWR<EstimateData>(`/api/estimates/${id}`)
   const discard = useDiscard()
   const [editing, setEditing] = useState(false)
@@ -97,7 +102,8 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
   const [activeGarmentIdx, setActiveGarmentIdx] = useState<number | null>(null)
   const [advanceError, setAdvanceError] = useState('')
 
-  const totalAmount = garments.reduce((sum, g) => sum + (g.amount || 0), 0)
+  const itemsSum = garments.reduce((sum, g) => sum + (g.amount || 0), 0)
+  const totalAmount = manualTotal
   const discountAmount = discountType === 'percentage'
     ? Math.round(totalAmount * discountValue / 100)
     : discountType === 'fixed' ? discountValue : 0
@@ -108,6 +114,7 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
     let items: GarmentItem[] = []
     try { items = data.items ? JSON.parse(data.items) : [] } catch { /* empty */ }
     setGarments(items.length > 0 ? items : [{ garment: '', amount: 0 }])
+    setManualTotal(data.totalAmount)
     setEditCustomer(data.customer)
     setEditOrderNo(data.internalOrderNo || '')
     setTrialDate(data.trialDate ? data.trialDate.slice(0, 10) : '')
@@ -158,6 +165,25 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
 
   const saveEstimate = async () => {
     if (advanceAmount > netPayable || saving) return
+    const isConverted = !!estimate.convertedOrderId
+    if (isConverted) {
+      const before = (() => { try { return JSON.parse(estimate.items || '[]') as GarmentItem[] } catch { return [] } })()
+      const kept = new Set(garments.filter(g => g.garment).map(g => g.uid))
+      const removed = before.filter(b => !kept.has(b.uid))
+      const added = garments.filter(g => g.garment && !g.uid)
+      if (removed.length || added.length) {
+        const parts = [
+          removed.length ? `Remove ${removed.map(r => `"${r.garment}"`).join(', ')} from the order and production tracker (its stage history and trials are deleted too).` : '',
+          added.length ? `Add ${added.map(a => `"${a.garment}"`).join(', ')} to the order as new production pieces.` : '',
+        ].filter(Boolean).join(' ')
+        const ok = await confirm({
+          title: 'Update the linked order?',
+          message: `${parts} Amount and discount on the order will be updated to match this estimate.`,
+          confirmLabel: 'Save & update order',
+        })
+        if (!ok) return
+      }
+    }
     setSaving(true)
     try {
       const res = await send(`/api/estimates/${id}`, 'PUT', {
@@ -177,6 +203,10 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
         notes: notes || null,
       })
       if (!res.ok) return alert(res.error)
+      const sync = (res.data as { sync?: { removedJobs: number; addedJobs: number } | null } | null)?.sync
+      setSyncNote(sync
+        ? `Saved. Order updated${sync.removedJobs ? ` · ${sync.removedJobs} production piece${sync.removedJobs !== 1 ? 's' : ''} removed` : ''}${sync.addedJobs ? ` · ${sync.addedJobs} added` : ''}.`
+        : '')
       setEditing(false)
       load()
     } finally {
@@ -329,6 +359,13 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
+      {syncNote && !editing && (
+        <div role="status" className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-green/30 bg-green/5 px-4 py-3 text-sm">
+          <p>{syncNote}</p>
+          <button onClick={() => setSyncNote('')} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+        </div>
+      )}
+
       {isDiscarded && (
         <div className="mb-6 flex items-start gap-2 rounded-xl border border-red/30 bg-red/5 px-4 py-3 text-sm">
           <Ban className="w-4 h-4 text-red mt-0.5 shrink-0" />
@@ -444,7 +481,30 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
                 </div>
               ))}
             </div>
-            <div className="mt-2 text-right text-sm font-semibold">Total: {formatCurrency(totalAmount)}</div>
+            <div className="mt-3 rounded-lg border border-border p-3 flex flex-col sm:flex-row sm:items-end gap-3">
+              <div>
+                <label htmlFor="manual-total" className="block text-xs font-semibold uppercase mb-1">Estimate Total (₹)</label>
+                <input
+                  id="manual-total"
+                  type="number"
+                  min={0}
+                  value={manualTotal || ''}
+                  onChange={e => setManualTotal(Math.max(0, Number(e.target.value)))}
+                  className="w-44 px-3 py-2 text-base font-semibold border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
+                />
+              </div>
+              <div className="text-xs text-muted-foreground sm:pb-2">
+                Sum of garments: <span className="font-medium text-foreground">{formatCurrency(itemsSum)}</span>
+                {itemsSum !== manualTotal && (
+                  <button type="button" onClick={() => setManualTotal(itemsSum)} className="ml-2 font-medium text-foreground underline underline-offset-2">Use this</button>
+                )}
+              </div>
+            </div>
+            {estimate.convertedOrderId && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                This estimate is already an order. Removing a garment removes its pieces from the order and production tracker; adding one creates new pieces. Revise the total and discount by hand.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -473,7 +533,8 @@ export default function EstimateDetailPage({ params }: { params: Promise<{ id: s
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Advance (₹)</label>
-              <input type="number" value={advanceAmount || ''} onChange={e => setAdvanceAmount(Number(e.target.value))} className={`w-full px-3 py-2 text-sm border rounded-lg ${advanceError ? 'border-red' : 'border-border'}`} />
+              <input type="number" disabled={!!estimate.convertedOrderId} value={advanceAmount || ''} onChange={e => setAdvanceAmount(Number(e.target.value))} className={`w-full px-3 py-2 text-sm border rounded-lg disabled:bg-muted disabled:text-muted-foreground ${advanceError ? 'border-red' : 'border-border'}`} />
+              {estimate.convertedOrderId && <p className="text-xs text-muted-foreground mt-1">Record further payments on the order.</p>}
               {advanceError && <p className="text-xs text-red mt-1">{advanceError}</p>}
             </div>
             <div>

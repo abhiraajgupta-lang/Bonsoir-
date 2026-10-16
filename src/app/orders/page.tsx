@@ -27,7 +27,7 @@ interface Order {
 
 export default function OrdersPage() {
   const { canSeeCustomerContact, canDiscard } = useAuth()
-  const [filter, setFilter] = useState('All')
+  const [filter, setFilter] = useState('Active')
   const [search, setSearch] = useState('')
   const { data: orders = [], isLoading } = useSWR<Order[]>(`/api/orders?status=${filter}`, { refreshInterval: 180000 })
   const { data: missingNo = [] } = useSWR<Order[]>(canDiscard ? '/api/orders?missingNo=1' : null)
@@ -43,13 +43,17 @@ export default function OrdersPage() {
       )
     : orders
 
-  const statusFilters = ['All', 'Active', 'Completed', 'Discarded']
+  const statusFilters = [
+    { key: 'Active', label: 'Active' },
+    { key: 'Discarded', label: 'Discarded' },
+    { key: 'Open', label: 'All' },
+  ]
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-semibold">Orders</h1>
-        <p className="hidden sm:block text-sm text-muted-foreground">Orders are created from Estimates</p>
+        <p className="hidden sm:block text-sm text-muted-foreground">Delivered orders move to the <Link href="/orders/delivered" className="underline underline-offset-2 hover:text-foreground">Delivered Orders</Link> tab</p>
       </div>
 
       {canDiscard && bulkOpen && (
@@ -80,15 +84,18 @@ export default function OrdersPage() {
         <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
           {statusFilters.map(s => (
             <button
-              key={s}
-              onClick={() => setFilter(s)}
+              key={s.key}
+              onClick={() => setFilter(s.key)}
               className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                filter === s ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'
+                filter === s.key ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {s}
+              {s.label}
             </button>
           ))}
+          <Link href="/orders/delivered" className="px-3 py-1.5 text-sm rounded-md whitespace-nowrap text-muted-foreground hover:text-foreground">
+            Delivered →
+          </Link>
         </div>
       </div>
 
@@ -185,7 +192,7 @@ export default function OrdersPage() {
                           ? 'bg-red/10 text-red'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
-                        {order.status}
+                        {order.status === 'Completed' ? 'Delivered' : order.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
