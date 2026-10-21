@@ -4,7 +4,9 @@ import { useState } from 'react'
 import useSWR from 'swr'
 import { send, useBusy } from '@/lib/api'
 import { Plus, Pencil, Check, X, Download, Search } from 'lucide-react'
-import { FOOTFALL_SOURCES, formatDate } from '@/lib/constants'
+import { FOOTFALL_SOURCES, FOOTFALL_STATUSES, formatDate } from '@/lib/constants'
+import CustomerPicker from '@/components/CustomerPicker'
+import Link from 'next/link'
 import { downloadCsv } from '@/lib/csv'
 import { useAuth } from '@/lib/auth-context'
 
@@ -17,16 +19,30 @@ interface FootfallEntry {
   followUpStatus: string
   notes: string | null
   createdAt: string
+  customer: { id: string; customerId: string; name: string } | null
 }
 
-const FOLLOW_UP_STATUSES = ['Pending', 'Interested', 'Follow Up', 'Converted', 'Not Interested']
+const FOLLOW_UP_STATUSES: readonly string[] = FOOTFALL_STATUSES
 
 const statusColors: Record<string, string> = {
-  Pending: 'bg-yellow-100 text-yellow-700',
-  Interested: 'bg-blue-100 text-blue-700',
-  'Follow Up': 'bg-purple-100 text-purple-700',
-  Converted: 'bg-emerald-100 text-emerald-700',
-  'Not Interested': 'bg-gray-100 text-gray-600',
+  'Sales exploration': 'bg-blue-100 text-blue-700',
+  'Sales conversion': 'bg-emerald-100 text-emerald-700',
+  'Sales not converted': 'bg-gray-100 text-gray-600',
+  'Follow-up': 'bg-purple-100 text-purple-700',
+  Trial: 'bg-amber-100 text-amber-800',
+  'Delivery pickup': 'bg-teal-100 text-teal-700',
+}
+
+const emptyForm = {
+  customerName: '',
+  mobile: '',
+  visitSource: 'Walk-in',
+  referenceCustomer: '',
+  followUpStatus: 'Sales exploration',
+  notes: '',
+  createdAt: '',
+  customerId: '',
+  customerCode: '',
 }
 
 export default function FootfallPage() {
@@ -41,21 +57,17 @@ export default function FootfallPage() {
   const [showNew, setShowNew] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ customerName: '', mobile: '', visitSource: '', referenceCustomer: '', followUpStatus: '', notes: '' })
-  const [form, setForm] = useState({
-    customerName: '',
-    mobile: '',
-    visitSource: 'Walk-in',
-    referenceCustomer: '',
-    notes: '',
-    createdAt: '',
-  })
+  const [form, setForm] = useState(emptyForm)
 
   const create = () => runSave(async () => {
     if (!form.customerName) return
-    const res = await send('/api/footfall', 'POST', form)
+    const payload: Partial<typeof form> = { ...form }
+    delete payload.customerCode
+    if (!payload.customerId) delete payload.customerId
+    const res = await send('/api/footfall', 'POST', payload)
     if (!res.ok) return alert(res.error)
     setShowNew(false)
-    setForm({ customerName: '', mobile: '', visitSource: 'Walk-in', referenceCustomer: '', notes: '', createdAt: '' })
+    setForm(emptyForm)
     load()
   })
 
@@ -98,7 +110,7 @@ export default function FootfallPage() {
     const day = localDay(e.createdAt)
     if (fromDate && day < fromDate) return false
     if (toDate && day > toDate) return false
-    if (q && ![e.customerName, e.mobile, e.referenceCustomer, e.notes].some(v => v?.toLowerCase().includes(q))) return false
+    if (q && ![e.customerName, e.mobile, e.referenceCustomer, e.notes, e.customer?.customerId].some(v => v?.toLowerCase().includes(q))) return false
     return true
   })
   const hasFilters = !!(q || sourceFilter !== 'All' || statusFilter !== 'All' || fromDate || toDate)
@@ -112,8 +124,8 @@ export default function FootfallPage() {
     const stamp = new Date().toISOString().slice(0, 10)
     downloadCsv(
       `bonsoir-footfall-${stamp}.csv`,
-      ['S.No', 'Visit Date', 'Visitor Name', 'Mobile', 'Visit Source', 'Reference Customer', 'Follow-up Status', 'Notes'],
-      filtered.map((e, i) => [i + 1, localDay(e.createdAt), e.customerName, e.mobile, e.visitSource, e.referenceCustomer, e.followUpStatus, e.notes]),
+      ['S.No', 'Visit Date', 'Visitor Name', 'Customer ID', 'Mobile', 'Visit Source', 'Reference Customer', 'Status', 'Notes'],
+      filtered.map((e, i) => [i + 1, localDay(e.createdAt), e.customerName, e.customer?.customerId, e.mobile, e.visitSource, e.referenceCustomer, e.followUpStatus, e.notes]),
     )
   }
 
@@ -170,6 +182,25 @@ export default function FootfallPage() {
       {showNew && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6 space-y-3">
           <h2 className="text-sm font-semibold">New Visitor Entry</h2>
+          <div className="rounded-lg bg-muted/40 border border-border p-3">
+            <p className="text-xs font-medium mb-1.5">Existing customer? Pick from Customers</p>
+            {form.customerId ? (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-card border border-border px-2 py-1">
+                  <span className="text-xs font-semibold text-muted-foreground">{form.customerCode}</span>
+                  <span className="font-medium">{form.customerName}</span>
+                </span>
+                <button onClick={() => setForm(p => ({ ...p, customerId: '', customerCode: '' }))} className="text-xs text-muted-foreground hover:text-red">Unlink</button>
+              </div>
+            ) : (
+              <CustomerPicker
+                compact
+                placeholder="Search by name, mobile or customer ID (C-00012)…"
+                onSelect={c => setForm(p => ({ ...p, customerId: c.id, customerCode: c.customerId, customerName: c.name, mobile: c.mobile }))}
+              />
+            )}
+            <p className="text-[11px] text-muted-foreground mt-1.5">New walk-in? Just fill in the details below. Visits are linked automatically when the mobile matches an existing customer.</p>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input type="text" placeholder="Customer Name *" value={form.customerName} onChange={e => setForm(p => ({ ...p, customerName: e.target.value }))} className={inputCls} />
             <input type="tel" placeholder="Mobile Number" value={form.mobile} onChange={e => setForm(p => ({ ...p, mobile: e.target.value }))} className={inputCls} />
@@ -185,6 +216,12 @@ export default function FootfallPage() {
                 <input type="text" placeholder="Reference Customer Name" value={form.referenceCustomer} onChange={e => setForm(p => ({ ...p, referenceCustomer: e.target.value }))} className={`w-full ${inputCls}`} />
               </div>
             )}
+            <label className="text-xs text-muted-foreground">
+              Status
+              <select value={form.followUpStatus} onChange={e => setForm(p => ({ ...p, followUpStatus: e.target.value }))} className={`block w-full mt-1 ${inputCls}`}>
+                {FOLLOW_UP_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
             <div>
               <label className="block text-xs text-muted-foreground mb-1">Visit Date (leave empty for today)</label>
               <input type="date" value={form.createdAt} onChange={e => setForm(p => ({ ...p, createdAt: e.target.value }))} className={`w-full ${inputCls}`} />
@@ -235,15 +272,15 @@ export default function FootfallPage() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-x-auto">
-          <table className="w-full min-w-[1080px] table-fixed">
+          <table className="w-full min-w-[1120px] table-fixed">
             <colgroup>
               <col className="w-11" />
               <col className="w-[108px]" />
               <col className="w-[160px]" />
               <col className="w-[118px]" />
-              <col className="w-[108px]" />
-              <col className="w-[130px]" />
-              <col className="w-[138px]" />
+              <col className="w-[104px]" />
+              <col className="w-[120px]" />
+              <col className="w-[172px]" />
               <col />
               <col className="w-[64px]" />
             </colgroup>
@@ -255,7 +292,7 @@ export default function FootfallPage() {
                 <th className={th}>Mobile</th>
                 <th className={th}>Source</th>
                 <th className={th}>Reference</th>
-                <th className={th}>Follow-up</th>
+                <th className={th}>Status</th>
                 <th className={th}>Notes</th>
                 <th className={`${th} text-right`}>Edit</th>
               </tr>
@@ -275,7 +312,7 @@ export default function FootfallPage() {
                     </td>
                     <td className="px-4 py-2"><input type="text" aria-label="Reference" value={editForm.referenceCustomer} onChange={ev => setEditForm(p => ({ ...p, referenceCustomer: ev.target.value }))} className={cellInput} /></td>
                     <td className="px-4 py-2">
-                      <select aria-label="Follow-up status" value={editForm.followUpStatus} onChange={ev => setEditForm(p => ({ ...p, followUpStatus: ev.target.value }))} className={cellInput}>
+                      <select aria-label="Status" value={editForm.followUpStatus} onChange={ev => setEditForm(p => ({ ...p, followUpStatus: ev.target.value }))} className={cellInput}>
                         {FOLLOW_UP_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
@@ -291,7 +328,14 @@ export default function FootfallPage() {
                   <tr key={e.id} className="border-b border-border last:border-0 hover:bg-muted/40 even:bg-muted/15 align-top">
                     <td className="px-4 py-3 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
                     <td className="px-4 py-3 text-sm whitespace-nowrap tabular-nums">{formatDate(e.createdAt)}</td>
-                    <td className="px-4 py-3 text-sm font-medium break-words">{e.customerName}</td>
+                    <td className="px-4 py-3 text-sm break-words">
+                      {e.customer ? (
+                        <Link href={`/customers/${e.customer.id}`} className="font-medium hover:underline">{e.customerName}</Link>
+                      ) : (
+                        <span className="font-medium">{e.customerName}</span>
+                      )}
+                      {e.customer && <p className="text-[11px] font-semibold text-muted-foreground mt-0.5">{e.customer.customerId}</p>}
+                    </td>
                     <td className="px-4 py-3 text-sm tabular-nums whitespace-nowrap">{e.mobile || <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-4 py-3">
                       <span className="inline-block text-xs font-medium bg-muted px-2 py-0.5 rounded whitespace-nowrap">{e.visitSource}</span>
@@ -299,12 +343,12 @@ export default function FootfallPage() {
                     <td className="px-4 py-3 text-sm break-words">{e.referenceCustomer || <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-4 py-3">
                       <select
-                        aria-label="Follow-up status"
+                        aria-label="Status"
                         value={e.followUpStatus}
                         onChange={ev => updateStatus(e.id, ev.target.value)}
                         className={`w-full px-2 py-1 text-xs font-medium rounded-md border-0 ${statusColors[e.followUpStatus] || 'bg-gray-100'}`}
                       >
-                        {FOLLOW_UP_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {(FOLLOW_UP_STATUSES.includes(e.followUpStatus) ? FOLLOW_UP_STATUSES : [e.followUpStatus, ...FOLLOW_UP_STATUSES]).map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">

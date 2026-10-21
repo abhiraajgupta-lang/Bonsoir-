@@ -139,3 +139,12 @@ export function pieceSetSummary(key?: string | null) {
 export const FOLLOW_UP_CHANNELS = ['WhatsApp', 'Call'] as const
 export const FOLLOW_UP_INTENTS = ['Store Visit', 'Online Order', 'Undecided'] as const
 export const FOLLOW_UP_STATUSES = ['New', 'Contacted', 'Interested', 'Visit Scheduled', 'Converted', 'Not Interested'] as const
+
+export const FOOTFALL_STATUSES = [
+  'Sales exploration',
+  'Sales conversion',
+  'Sales not converted',
+  'Follow-up',
+  'Trial',
+  'Delivery pickup',
+] as const

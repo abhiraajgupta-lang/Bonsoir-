@@ -27,6 +27,7 @@ model Customer {
   measurements MeasurementSet[]
   orders       Order[]
   estimates    Estimate[]
+  footfalls    Footfall[]
 }
 
 model MeasurementSet {
@@ -224,10 +225,13 @@ model Footfall {
   mobile          String?
   visitSource     String
   referenceCustomer String?
-  followUpStatus  String   @default("Pending")
+  followUpStatus  String   @default("Sales exploration")
   notes           String?
+  customerId      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 }
 
 model TodoItem {
