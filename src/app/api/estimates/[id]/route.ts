@@ -81,6 +81,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         newItems,
         totals: { totalAmount, discountType, discountValue, discountAmount, netPayable },
         deliveryDate: estimate.deliveryDate,
+        trialDate: estimate.trialDate,
       })
     : null
 

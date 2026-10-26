@@ -12,7 +12,7 @@ export const EMPLOYEE_ROLES: Role[] = ['store_manager', 'production_manager', 'd
 const ALL_PAGES = ['/', '/orders', '/customers', '/styles', '/estimates', '/production', '/trials', '/footfall', '/followups', '/todos']
 
 const PAGE_ACCESS: Record<Role, string[]> = {
-  owner: [...ALL_PAGES, '/employees'],
+  owner: [...ALL_PAGES, '/expenses', '/employees'],
   store_manager: ALL_PAGES,
   production_manager: ['/orders', '/production', '/todos'],
   designer: ['/styles', '/todos'],
@@ -47,6 +47,7 @@ export function canDiscard(role: Role) {
 export function canAccessApi(role: Role, path: string, method: string) {
   if (role === 'owner') return true
   if (matches(path, '/api/employees') && method !== 'GET') return false
+  if (matches(path, '/api/expenses')) return false
   if (path === '/api/todos' && method === 'POST') return false
   if (path === '/api/styles/categories' && method !== 'GET') return false
   if (/^\/api\/(orders|estimates)\/[^/]+\/discard$/.test(path) && !canDiscard(role)) return false

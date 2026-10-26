@@ -9,6 +9,7 @@ import { send, useBusy } from '@/lib/api'
 import { useDiscard } from '@/components/useDiscard'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { OrderNoBadge } from '@/components/OrderNoBadge'
+import { daysFromToday, relativeDay } from '@/components/TrialDate'
 import { PRODUCTION_STAGES, PAYMENT_METHODS, TRIAL_OUTCOMES, formatCurrency, formatDate, formatDateTime, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
@@ -21,6 +22,7 @@ interface OrderData {
   status: string
   discardedAt: string | null
   deliveredAt: string | null
+  trialDate: string | null
   discardedBy: string | null
   eventName: string | null
   deliveryDate: string
@@ -108,6 +110,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       load()
     })
   }
+
+  const saveTrialDate = (value: string) => runSave(async () => {
+    const res = await send(`/api/orders/${order.id}`, 'PUT', { trialDate: value || null })
+    if (!res.ok) return alert(res.error)
+    load()
+  })
 
   const saveOrderNo = () => runSave(async () => {
     const res = await send(`/api/orders/${order.id}`, 'PUT', { internalOrderNo: orderNoDraft })
@@ -299,7 +307,25 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       <div className={isDiscarded ? 'opacity-60' : ''}>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+        <div className="bg-card border border-border rounded-xl p-4">
+          <label htmlFor="trial-date" className="block text-xs text-muted-foreground uppercase">Trial</label>
+          {canDiscard && order.status === 'Active' ? (
+            <input
+              id="trial-date"
+              type="date"
+              disabled={saving}
+              value={order.trialDate ? order.trialDate.slice(0, 10) : ''}
+              onChange={e => saveTrialDate(e.target.value)}
+              className="mt-1 w-full text-sm font-semibold bg-transparent border-0 p-0 focus:outline-none focus:ring-2 focus:ring-ring/20 rounded disabled:opacity-50"
+            />
+          ) : (
+            <p className="text-sm font-semibold mt-1">{order.trialDate ? formatDate(order.trialDate) : '—'}</p>
+          )}
+          {order.trialDate && order.status === 'Active' && (
+            <p className="text-xs text-muted-foreground mt-0.5">{relativeDay(daysFromToday(order.trialDate))}</p>
+          )}
+        </div>
         <div className="bg-card border border-border rounded-xl p-4">
           <p className="text-xs text-muted-foreground uppercase">Delivery</p>
           <p className="text-sm font-semibold mt-1">{formatDate(order.deliveryDate)}</p>

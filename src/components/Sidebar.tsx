@@ -13,6 +13,7 @@ import {
   Scissors,
   Footprints,
   PackageCheck,
+  Wallet,
   PhoneCall,
   ListTodo,
   Menu,
@@ -35,6 +36,7 @@ const navItems = [
   { href: '/footfall', label: 'Footfall', icon: Footprints },
   { href: '/followups', label: 'Follow-ups', icon: PhoneCall },
   { href: '/todos', label: 'To-Do', icon: ListTodo },
+  { href: '/expenses', label: 'Expenses', icon: Wallet },
   { href: '/employees', label: 'Employees', icon: UsersRound },
 ]
 

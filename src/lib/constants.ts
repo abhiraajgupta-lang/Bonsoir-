@@ -148,3 +148,33 @@ export const FOOTFALL_STATUSES = [
   'Trial',
   'Delivery pickup',
 ] as const
+
+export const EXPENSE_CATEGORIES = [
+  'Rent',
+  'Salaries & Wages',
+  'Fabric & Materials',
+  'Tailoring / Job Work',
+  'Embroidery',
+  'Utilities',
+  'Marketing',
+  'Transport & Courier',
+  'Packaging',
+  'Repairs & Maintenance',
+  'Staff Welfare',
+  'Miscellaneous',
+] as const
+
+// Business days run on India time regardless of where the server is.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+
+export function istDayStart(d: Date = new Date(), addDays = 0) {
+  const ist = new Date(d.getTime() + IST_OFFSET_MS)
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + addDays) - IST_OFFSET_MS)
+}
+
+export function istMonthStart(d: Date = new Date(), addMonths = 0) {
+  const ist = new Date(d.getTime() + IST_OFFSET_MS)
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() + addMonths, 1) - IST_OFFSET_MS)
+}
+
+export const EXPENSE_PAYMENT_MODES = ['Cash', 'UPI', 'Bank Transfer', 'Card', 'Cheque', 'Other'] as const

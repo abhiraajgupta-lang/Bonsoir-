@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import useSWR from 'swr'
-import { Search, Ban } from 'lucide-react'
+import { Search, Ban, ArrowUpDown } from 'lucide-react'
 import { useDiscard } from '@/components/useDiscard'
 import { OrderNoBadge } from '@/components/OrderNoBadge'
 import { BulkOrderNoEditor } from '@/components/BulkOrderNoEditor'
-import { formatCurrency, formatDate, getDeliveryRisk } from '@/lib/constants'
+import { TrialDate } from '@/components/TrialDate'
+import { formatCurrency, formatDate, getDeliveryRisk, istDayStart } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
 interface Order {
@@ -17,6 +18,7 @@ interface Order {
   status: string
   eventName: string | null
   deliveryDate: string
+  trialDate: string | null
   channel: string
   totalAmount: number
   balanceDue: number
@@ -29,12 +31,19 @@ export default function OrdersPage() {
   const { canSeeCustomerContact, canDiscard } = useAuth()
   const [filter, setFilter] = useState('Active')
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<'newest' | 'trial'>(() => {
+    try { return localStorage.getItem('bonsoir_orders_sort') === 'trial' ? 'trial' : 'newest' } catch { return 'newest' }
+  })
+  const changeSort = (v: 'newest' | 'trial') => {
+    setSortBy(v)
+    try { localStorage.setItem('bonsoir_orders_sort', v) } catch {}
+  }
   const { data: orders = [], isLoading } = useSWR<Order[]>(`/api/orders?status=${filter}`, { refreshInterval: 180000 })
   const { data: missingNo = [] } = useSWR<Order[]>(canDiscard ? '/api/orders?missingNo=1' : null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const discard = useDiscard()
 
-  const filtered = search
+  const searched = search
     ? orders.filter(o =>
         o.customer.name.toLowerCase().includes(search.toLowerCase()) ||
         o.orderNumber.toString().includes(search) ||
@@ -42,6 +51,20 @@ export default function OrdersPage() {
         o.customer.mobile.includes(search)
       )
     : orders
+
+  // Upcoming trials first (closest first), then past trials (most recent first), then orders without one.
+  const todayStart = istDayStart().toISOString()
+  const trialRank = (o: Order) => (!o.trialDate ? 2 : o.trialDate >= todayStart ? 0 : 1)
+  const filtered = sortBy === 'trial'
+    ? [...searched].sort((a, b) => {
+        const ra = trialRank(a), rb = trialRank(b)
+        if (ra !== rb) return ra - rb
+        if (ra === 0) return a.trialDate!.localeCompare(b.trialDate!)
+        if (ra === 1) return b.trialDate!.localeCompare(a.trialDate!)
+        return 0
+      })
+    : searched
+  const firstPastIdx = sortBy === 'trial' ? filtered.findIndex(o => trialRank(o) === 1) : -1
 
   const statusFilters = [
     { key: 'Active', label: 'Active' },
@@ -81,6 +104,19 @@ export default function OrdersPage() {
             className="w-full pl-10 pr-4 py-2 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/20"
           />
         </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
+          <ArrowUpDown className="w-4 h-4" />
+          <span className="sr-only sm:not-sr-only">Sort</span>
+          <select
+            aria-label="Sort orders"
+            value={sortBy}
+            onChange={e => changeSort(e.target.value as 'newest' | 'trial')}
+            className={`px-3 py-2 text-sm border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 ${sortBy === 'trial' ? 'border-accent font-medium' : 'border-border'}`}
+          >
+            <option value="newest">Newest first</option>
+            <option value="trial">Trial date — closest first</option>
+          </select>
+        </label>
         <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
           {statusFilters.map(s => (
             <button
@@ -119,6 +155,7 @@ export default function OrdersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3">Order</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3">Customer</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden md:table-cell">Items</th>
+                <th className={`text-left text-xs font-medium uppercase tracking-wide px-4 py-3 whitespace-nowrap ${sortBy === 'trial' ? 'text-foreground' : 'text-muted-foreground'}`}>Trial{sortBy === 'trial' && ' ↑'}</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden sm:table-cell">Delivery</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3">Amount</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-3 hidden lg:table-cell">Status</th>
@@ -127,7 +164,7 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(order => {
+              {filtered.map((order, idx) => {
                 const worstRisk = order.jobs.reduce((worst, job) => {
                   const risk = getDeliveryRisk(job.deliveryDate || order.deliveryDate, job.currentStage)
                   if (risk === 'red') return 'red'
@@ -142,7 +179,15 @@ export default function OrdersPage() {
                 }
 
                 return (
-                  <tr key={order.id} className={`border-b border-border last:border-0 hover:bg-muted/50 transition-colors ${order.status === 'Discarded' ? 'opacity-50' : ''}`}>
+                  <Fragment key={order.id}>
+                  {idx === firstPastIdx && (
+                    <tr className="bg-muted/60">
+                      <td colSpan={20} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Trial date passed
+                      </td>
+                    </tr>
+                  )}
+                  <tr className={`border-b border-border last:border-0 hover:bg-muted/50 transition-colors ${order.status === 'Discarded' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <OrderNoBadge no={order.internalOrderNo} />
@@ -174,6 +219,9 @@ export default function OrdersPage() {
                       <p className="text-sm">
                         {order.jobs.map(j => j.garmentType).join(', ')}
                       </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <TrialDate date={order.trialDate} done={order.status !== 'Active'} />
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
                       <p className="text-sm">{formatDate(order.deliveryDate)}</p>
@@ -214,6 +262,7 @@ export default function OrdersPage() {
                       </td>
                     )}
                   </tr>
+                  </Fragment>
                 )
               })}
             </tbody>

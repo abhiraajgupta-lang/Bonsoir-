@@ -62,6 +62,7 @@ export async function syncOrderWithEstimate(opts: {
   newItems: EstimateItem[]
   totals: { totalAmount: number; discountType: string | null; discountValue: number; discountAmount: number; netPayable: number }
   deliveryDate: Date | null
+  trialDate: Date | null
 }) {
   const order = await prisma.order.findUnique({
     where: { id: opts.orderId },
@@ -120,6 +121,7 @@ export async function syncOrderWithEstimate(opts: {
         advancePaid: paid,
         balanceDue: opts.totals.netPayable - paid,
         ...(deliveryChanged ? { deliveryDate: opts.deliveryDate! } : {}),
+        trialDate: opts.trialDate,
       },
     })
   }, { timeout: 30000 })

@@ -72,6 +72,7 @@ model Order {
   customerId    String
   eventName     String?
   deliveryDate  DateTime
+  trialDate     DateTime?
   salesperson   String?
   channel       String   @default("In-Store")
   totalAmount   Float    @default(0)
@@ -299,4 +300,20 @@ model FollowUp {
   updatedAt      DateTime @updatedAt
 
   @@index([followUpStatus])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  date        DateTime
+  category    String
+  description String
+  amount      Float
+  paymentMode String   @default("Cash")
+  paidTo      String?
+  notes       String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
 }

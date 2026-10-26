@@ -1,13 +1,15 @@
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import { istDayStart, istMonthStart } from '@/lib/constants'
 
 export async function GET() {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
+  const today = istDayStart()
+  const tomorrow = istDayStart(new Date(), 1)
+  const in3Days = istDayStart(new Date(), 3)
+  const monthStart = istMonthStart()
+  const notDiscarded = { status: { not: 'Discarded' } }
 
-  const [activeOrders, allJobs, payments, trialsToday] = await Promise.all([
+  const [activeOrders, allJobs, pending, salesToday, salesMonth, collectedToday, collectedMonth, upcoming] = await Promise.all([
     prisma.order.count({ where: { status: 'Active' } }),
     prisma.job.findMany({
       where: { status: { not: 'Completed' }, order: { status: 'Active' } },
@@ -17,16 +19,26 @@ export async function GET() {
       },
     }),
     prisma.order.aggregate({
-      where: { status: 'Active' },
+      where: { ...notDiscarded, balanceDue: { gt: 0 } },
       _sum: { balanceDue: true },
+      _count: true,
     }),
-    prisma.trial.count({
-      where: {
-        trialDate: { gte: today, lt: tomorrow },
-        job: { order: { status: 'Active' } },
+    prisma.order.aggregate({ where: { ...notDiscarded, createdAt: { gte: today, lt: tomorrow } }, _sum: { netPayable: true }, _count: true }),
+    prisma.order.aggregate({ where: { ...notDiscarded, createdAt: { gte: monthStart } }, _sum: { netPayable: true }, _count: true }),
+    prisma.payment.aggregate({ where: { createdAt: { gte: today, lt: tomorrow }, order: notDiscarded }, _sum: { amount: true } }),
+    prisma.payment.aggregate({ where: { createdAt: { gte: monthStart }, order: notDiscarded }, _sum: { amount: true } }),
+    prisma.order.findMany({
+      where: { status: 'Active', trialDate: { gte: today, lt: in3Days } },
+      orderBy: { trialDate: 'asc' },
+      select: {
+        id: true, orderNumber: true, internalOrderNo: true, trialDate: true,
+        customer: { select: { name: true } },
+        jobs: { select: { garmentType: true, currentStage: true }, orderBy: { jobNumber: 'asc' } },
       },
     }),
   ])
+
+  const trialsToday = upcoming.filter(o => o.trialDate! < tomorrow).length
 
   const deliveriesToday = allJobs.filter(j => {
     const dd = j.deliveryDate || j.order.deliveryDate
@@ -82,7 +94,22 @@ export async function GET() {
     trialsToday,
     deliveriesToday,
     overdue,
-    paymentsPending: payments._sum.balanceDue || 0,
+    paymentsPending: pending._sum.balanceDue || 0,
+    paymentsPendingOrders: pending._count,
+    sales: {
+      today: { booked: salesToday._sum.netPayable || 0, orders: salesToday._count, collected: collectedToday._sum.amount || 0 },
+      month: { booked: salesMonth._sum.netPayable || 0, orders: salesMonth._count, collected: collectedMonth._sum.amount || 0 },
+    },
+    upcomingTrials: upcoming.map(o => ({
+      orderId: o.id,
+      orderNumber: o.orderNumber,
+      internalOrderNo: o.internalOrderNo,
+      trialDate: o.trialDate,
+      customerName: o.customer.name,
+      garments: o.jobs.map(j => j.garmentType),
+      readyForTrial: o.jobs.filter(j => j.currentStage === 'Ready for Trial').length,
+      pieces: o.jobs.length,
+    })),
     attentionItems,
   })
 }

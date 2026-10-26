@@ -62,6 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           internalOrderNo: estimate.internalOrderNo,
           customerId: estimate.customerId!,
           deliveryDate: estimate.deliveryDate || new Date(),
+          trialDate: estimate.trialDate,
           channel: estimate.channel || 'In-Store',
           totalAmount: estimate.totalAmount,
           discountType: estimate.discountType,

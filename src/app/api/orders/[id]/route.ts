@@ -44,12 +44,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       internalOrderNo,
       eventName: body.eventName,
       deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : undefined,
+      trialDate: body.trialDate === undefined ? undefined : body.trialDate ? new Date(body.trialDate) : null,
       salesperson: body.salesperson,
       totalAmount: body.totalAmount,
       notes: body.notes,
       status: body.status,
     },
   })
+
+  if (body.trialDate !== undefined) {
+    await prisma.estimate.updateMany({
+      where: { OR: [{ convertedOrderId: id }, ...(order.estimateId ? [{ id: order.estimateId }] : [])] },
+      data: { trialDate: order.trialDate },
+    })
+  }
 
   if (internalOrderNo) {
     await prisma.estimate.updateMany({
