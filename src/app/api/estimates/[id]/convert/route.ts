@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
-import { createJobsForItem, getStylePieces } from '@/lib/jobs'
-import { getPieceSet } from '@/lib/constants'
+import { createJobsForItem, getStylePieces, piecesFor } from '@/lib/jobs'
 import { parseItems, withStoredKeys } from '@/lib/estimateItems'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -86,8 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           garmentType: item.garment,
           amount: item.amount || 0,
           styleId: item.styleId,
-          pieces: (item.styleId && livePieces.get(item.styleId)) || item.pieces || 1,
-          pieceNames: !item.styleId && item.pieceSet ? getPieceSet(item.pieceSet).parts : undefined,
+          ...piecesFor(item, livePieces),
           measurementSetId: measurementFor.get(item.customerId || estimate.customerId!) ?? null,
           deliveryDate: estimate.deliveryDate,
           jobNotes: forOther ? `For: ${item.customerName}` : null,
@@ -104,6 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           amount: estimate.advanceAmount,
           method: estimate.advancePaymentMode || 'Cash',
           notes: 'Advance payment (from estimate)',
+          paymentDate: estimate.createdAt,
         },
       })
     }

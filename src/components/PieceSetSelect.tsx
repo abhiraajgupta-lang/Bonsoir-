@@ -13,7 +13,7 @@ export function PieceSetSelect({ value, onChange }: { value?: string; onChange: 
           onChange={e => onChange(e.target.value)}
           className="block sm:inline-block sm:ml-2 mt-1 sm:mt-0 w-full sm:w-auto px-2 py-1.5 text-xs text-foreground border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
         >
-          {[1, 2, 3].map(n => (
+          {[1, 2, 3, 4].map(n => (
             <optgroup key={n} label={`${n} piece`}>
               {PIECE_SETS.filter(p => p.pieces === n).map(p => (
                 <option key={p.key} value={p.key}>{p.label}</option>

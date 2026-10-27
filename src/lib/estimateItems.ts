@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
-import { getPieceSet } from '@/lib/constants'
-import { createJobsForItem, getStylePieces } from '@/lib/jobs'
+import { createJobsForItem, getStylePieces, piecesFor } from '@/lib/jobs'
 
 export interface EstimateItem {
   uid?: string
@@ -99,8 +98,7 @@ export async function syncOrderWithEstimate(opts: {
         garmentType: item.garment,
         amount: item.amount || 0,
         styleId: item.styleId,
-        pieces: (item.styleId && livePieces.get(item.styleId)) || item.pieces || 1,
-        pieceNames: !item.styleId && item.pieceSet ? getPieceSet(item.pieceSet).parts : undefined,
+        ...piecesFor(item, livePieces),
         measurementSetId: measurementFor.get(item.customerId || opts.estimateCustomerId || '') ?? null,
         deliveryDate: opts.deliveryDate,
         jobNotes: forOther ? `For: ${item.customerName}` : null,

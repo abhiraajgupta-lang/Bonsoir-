@@ -1,9 +1,11 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { PIECE_SETS, getPieceSet } from '@/lib/constants'
 
 type Tx = Prisma.TransactionClient
 
-const PIECE_SUFFIX_RE = / - (Blazer\/Top|Trouser\/Bottom|Waistcoat|Piece \d+|Upper|Bottom|Coat|Trouser|Vest|Jacket)$/
+const PART_NAMES = [...new Set(['Blazer/Top', 'Trouser/Bottom', 'Waistcoat', ...PIECE_SETS.flatMap(p => p.parts)])]
+const PIECE_SUFFIX_RE = new RegExp(` - (${PART_NAMES.map(n => n.replace('/', '\\/')).join('|')}|Piece \\d+)$`)
 
 export function pieceName(p: number) {
   return ['Blazer/Top', 'Trouser/Bottom', 'Waistcoat'][p] ?? `Piece ${p + 1}`
@@ -62,17 +64,34 @@ export async function createJobsForItem(tx: Tx, item: JobItem) {
   }
 }
 
+export type StylePieces = { pieces: number; parts: readonly string[] | null }
+
 export async function getStylePieces(tx: Tx, styleIds: (string | null | undefined)[]) {
   const ids = [...new Set(styleIds.filter((s): s is string => !!s))]
-  if (ids.length === 0) return new Map<string, number>()
-  const styles = await tx.style.findMany({ where: { id: { in: ids } }, select: { id: true, pieces: true } })
-  return new Map(styles.map(s => [s.id, s.pieces]))
+  if (ids.length === 0) return new Map<string, StylePieces>()
+  const styles = await tx.style.findMany({ where: { id: { in: ids } }, select: { id: true, pieces: true, pieceSet: true } })
+  return new Map<string, StylePieces>(styles.map(s => [s.id, {
+    pieces: s.pieceSet ? getPieceSet(s.pieceSet).pieces : s.pieces,
+    parts: s.pieceSet ? getPieceSet(s.pieceSet).parts : null,
+  }]))
 }
 
-// Re-split jobs of a style across all non-completed orders after its piece count changes.
+// Piece count and names for an estimate/order item: style garments follow the style, custom ones their chosen set.
+export function piecesFor(item: { styleId?: string | null; pieces?: number; pieceSet?: string }, live: Map<string, StylePieces>) {
+  const style = item.styleId ? live.get(item.styleId) : undefined
+  if (style) return { pieces: style.pieces, pieceNames: style.parts ?? undefined }
+  if (!item.styleId && item.pieceSet) return { pieces: getPieceSet(item.pieceSet).pieces, pieceNames: getPieceSet(item.pieceSet).parts }
+  return { pieces: item.pieces || 1, pieceNames: undefined }
+}
+
+// Re-split / rename jobs of a style across active orders after its pieces change.
 // Groups where extra pieces have already progressed past "Order Placed" are left untouched.
-export async function syncStylePieces(styleId: string, newPieces: number) {
-  const target = Math.max(1, newPieces)
+export async function syncStylePieces(styleId: string, newPieces: number, parts: readonly string[] | null) {
+  const target = parts ? parts.length : Math.max(1, newPieces)
+  const nameFor = (base: string, p: number) => {
+    if (parts) return target === 1 && parts[0] === 'Upper' ? base : `${base} - ${parts[p]}`
+    return target > 1 ? `${base} - ${pieceName(p)}` : base
+  }
   const jobs = await prisma.job.findMany({
     where: { styleId, order: { status: 'Active' } },
     include: { trials: { select: { id: true } } },
@@ -87,12 +106,12 @@ export async function syncStylePieces(styleId: string, newPieces: number) {
 
   let updated = 0
   for (const [base, group] of groups) {
-    if (group.length === target) continue
+    const first = group[0]
+    const baseGarment = first.garmentType.replace(PIECE_SUFFIX_RE, '')
+    if (group.length === target && group.every((j, p) => j.garmentType === nameFor(baseGarment, p))) continue
     const removable = group.slice(target)
     if (removable.some(j => j.currentStage !== 'Order Placed' || j.trials.length > 0)) continue
 
-    const first = group[0]
-    const baseGarment = first.garmentType.replace(PIECE_SUFFIX_RE, '')
     const amounts = splitAmount(group.reduce((s, j) => s + j.amount, 0), target)
 
     await prisma.$transaction(async tx => {
@@ -100,8 +119,8 @@ export async function syncStylePieces(styleId: string, newPieces: number) {
       for (let p = 0; p < target; p++) {
         const data = {
           jobNumber: target > 1 ? `${base}${String.fromCharCode(65 + p)}` : base,
-          garmentType: target > 1 ? `${baseGarment} - ${pieceName(p)}` : baseGarment,
-          amount: amounts[p],
+          garmentType: nameFor(baseGarment, p),
+          amount: group.length === target ? group[p].amount : amounts[p],
         }
         if (p < group.length) {
           await tx.job.update({ where: { id: group[p].id }, data })

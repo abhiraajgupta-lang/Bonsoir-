@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 import { cleanOrderNo, orderNoProblem } from '@/lib/orderNo'
-import { createJobsForItem, getStylePieces } from '@/lib/jobs'
+import { createJobsForItem, getStylePieces, piecesFor } from '@/lib/jobs'
 import { hideContactFor } from '@/lib/employees'
 
 export async function GET(req: NextRequest) {
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
           garmentType: job.garmentType,
           amount: job.amount || 0,
           styleId: job.styleId,
-          pieces: (job.styleId && livePieces.get(job.styleId)) || 1,
+          ...piecesFor({ styleId: job.styleId }, livePieces),
           measurementSetId: job.measurementSetId,
           deliveryDate: job.deliveryDate ? new Date(job.deliveryDate) : null,
           fabricDetails: job.fabricDetails,

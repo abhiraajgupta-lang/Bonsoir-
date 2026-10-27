@@ -141,6 +141,7 @@ model Style {
   name        String?
   category    String
   pieces      Int      @default(1)
+  pieceSet    String?
   color       String?
   price       Float    @default(0)
   description String?
@@ -183,6 +184,7 @@ model Payment {
   method          String
   receiptReference String?
   notes           String?
+  paymentDate     DateTime @default(now())
   createdAt       DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)

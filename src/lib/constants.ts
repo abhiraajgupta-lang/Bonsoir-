@@ -123,7 +123,16 @@ export const PIECE_SETS = [
   { key: 'upper_bottom', pieces: 2, label: '2 piece — Upper + Bottom', parts: ['Upper', 'Bottom'] },
   { key: 'upper_vest', pieces: 2, label: '2 piece — Upper + Vest', parts: ['Upper', 'Vest'] },
   { key: 'jacket_trouser_vest', pieces: 3, label: '3 piece — Jacket + Trouser + Vest', parts: ['Jacket', 'Trouser', 'Vest'] },
+  { key: 'jacket_kurta_bottom', pieces: 3, label: '3 piece — Jacket + Kurta + Bottom', parts: ['Jacket', 'Kurta', 'Bottom'] },
+  { key: 'jacket_vest_bottom', pieces: 3, label: '3 piece — Jacket + Vest + Bottom', parts: ['Jacket', 'Vest', 'Bottom'] },
+  { key: 'jacket_shirt_bottom', pieces: 3, label: '3 piece — Jacket + Shirt + Bottom', parts: ['Jacket', 'Shirt', 'Bottom'] },
+  { key: 'upper_bottom_stole', pieces: 3, label: '3 piece — Upper + Bottom + Stole', parts: ['Upper', 'Bottom', 'Stole'] },
+  { key: 'sherwani_kurta_bottom_stole', pieces: 4, label: '4 piece — Sherwani + Kurta + Bottom + Stole', parts: ['Sherwani', 'Kurta', 'Bottom', 'Stole'] },
 ] as const
+
+export function isPieceSetKey(key: unknown): key is PieceSetKey {
+  return typeof key === 'string' && PIECE_SETS.some(p => p.key === key)
+}
 
 export type PieceSetKey = typeof PIECE_SETS[number]['key']
 

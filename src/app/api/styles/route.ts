@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPieceSet, isPieceSetKey } from '@/lib/constants'
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams.get('search') || ''
@@ -28,13 +29,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
+  const pieceSet = isPieceSetKey(body.pieceSet) ? body.pieceSet : 'upper'
 
   const style = await prisma.style.create({
     data: {
       styleCode: body.styleCode || null,
       name: body.name || null,
       category: body.category,
-      pieces: body.pieces || 1,
+      pieceSet,
+      pieces: getPieceSet(pieceSet).pieces,
       color: body.color || null,
       price: body.price || 0,
       description: body.description || null,

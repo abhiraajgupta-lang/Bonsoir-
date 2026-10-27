@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           measurementSet: true,
         },
       },
-      payments: { orderBy: { createdAt: 'desc' } },
+      payments: { orderBy: [{ paymentDate: 'asc' }, { createdAt: 'asc' }] },
     },
   })
 

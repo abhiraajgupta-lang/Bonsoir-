@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import useSWR from 'swr'
 import { send, useBusy } from '@/lib/api'
 import { Search, Plus, Palette, Pencil, X, Upload, Trash2 } from 'lucide-react'
-import { formatCurrency } from '@/lib/constants'
+import { formatCurrency, getPieceSet, PIECE_SETS } from '@/lib/constants'
 import { useStyleCategories } from '@/lib/useStyleCategories'
 import { useAuth } from '@/lib/auth-context'
 
@@ -14,6 +14,7 @@ interface Style {
   name: string | null
   category: string
   pieces: number
+  pieceSet: string | null
   color: string | null
   price: number
   description: string | null
@@ -23,7 +24,7 @@ interface Style {
 }
 
 const emptyForm = {
-  styleCode: '', name: '', category: 'Suits', price: 0, pieces: 1, color: '',
+  styleCode: '', name: '', category: 'Suits', price: 0, pieceSet: 'upper', color: '',
   description: '', fabric: '', imageUrl: '', status: 'Active',
 }
 
@@ -117,7 +118,7 @@ export default function StylesPage() {
       name: style.name || '',
       category: style.category,
       price: style.price,
-      pieces: style.pieces,
+      pieceSet: style.pieceSet || legacyPieceSet(style.pieces),
       color: style.color || '',
       description: style.description || '',
       fabric: style.fabric || '',
@@ -162,14 +163,9 @@ export default function StylesPage() {
             <input type="number" placeholder="Price" value={form.price || ''} onChange={e => setForm(p => ({ ...p, price: Number(e.target.value) }))} className={inputClass} />
             <input type="text" placeholder="Fabric" value={form.fabric} onChange={e => setForm(p => ({ ...p, fabric: e.target.value }))} className={inputClass} />
             <input type="text" placeholder="Color" value={form.color} onChange={e => setForm(p => ({ ...p, color: e.target.value }))} className={inputClass} />
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-xs text-muted-foreground mb-1">Production Pieces</label>
-              <select value={form.pieces} onChange={e => setForm(p => ({ ...p, pieces: Number(e.target.value) }))} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background">
-                <option value={1}>1 piece (single garment)</option>
-                <option value={2}>2 pieces (e.g. blazer + trouser)</option>
-                <option value={3}>3 pieces (e.g. blazer + trouser + waistcoat)</option>
-                <option value={4}>4 pieces</option>
-              </select>
+              <StylePiecesField value={form.pieceSet} onChange={key => setForm(p => ({ ...p, pieceSet: key }))} />
             </div>
             <input type="text" placeholder="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} className={inputClass} />
             <div>
@@ -288,10 +284,13 @@ export default function StylesPage() {
                 <p className="text-sm font-semibold mt-1">{formatCurrency(s.price)}</p>
                 <div className="flex items-center gap-2 mt-0.5">
                   <p className="text-xs text-muted-foreground">{s.category}</p>
-                  {s.pieces > 1 && (
-                    <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{s.pieces}-pc</span>
-                  )}
                 </div>
+                {(s.pieceSet ? getPieceSet(s.pieceSet).pieces : s.pieces) > 1 && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    <span className="font-semibold text-foreground">{s.pieceSet ? getPieceSet(s.pieceSet).pieces : s.pieces}-pc</span>
+                    {s.pieceSet && ` · ${getPieceSet(s.pieceSet).parts.join(' + ')}`}
+                  </p>
+                )}
                 {s.color && <p className="text-xs text-muted-foreground mt-0.5">{s.color}</p>}
                 {s.fabric && <p className="text-xs text-muted-foreground">{s.fabric}</p>}
               </div>
@@ -343,14 +342,9 @@ export default function StylesPage() {
                 <input type="number" placeholder="Price" value={editForm.price || ''} onChange={e => setEditForm(p => ({ ...p, price: Number(e.target.value) }))} className={inputClass} />
                 <input type="text" placeholder="Fabric" value={editForm.fabric} onChange={e => setEditForm(p => ({ ...p, fabric: e.target.value }))} className={inputClass} />
                 <input type="text" placeholder="Color" value={editForm.color} onChange={e => setEditForm(p => ({ ...p, color: e.target.value }))} className={inputClass} />
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Pieces</label>
-                  <select value={editForm.pieces} onChange={e => setEditForm(p => ({ ...p, pieces: Number(e.target.value) }))} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background">
-                    <option value={1}>1 piece</option>
-                    <option value={2}>2 pieces</option>
-                    <option value={3}>3 pieces</option>
-                    <option value={4}>4 pieces</option>
-                  </select>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-muted-foreground mb-1">Production Pieces</label>
+                  <StylePiecesField value={editForm.pieceSet} onChange={key => setEditForm(p => ({ ...p, pieceSet: key }))} />
                 </div>
                 <input type="text" placeholder="Description" value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} className={inputClass} />
               </div>
@@ -362,6 +356,34 @@ export default function StylesPage() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// Styles saved before named piece sets map to the closest set by count.
+function legacyPieceSet(pieces: number) {
+  return ({ 1: 'upper', 2: 'upper_bottom', 3: 'jacket_trouser_vest', 4: 'sherwani_kurta_bottom_stole' } as Record<number, string>)[pieces] ?? 'upper'
+}
+
+function StylePiecesField({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+  const set = getPieceSet(value)
+  return (
+    <div>
+      <select value={set.key} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background">
+        {[1, 2, 3, 4].map(n => (
+          <optgroup key={n} label={`${n} piece`}>
+            {PIECE_SETS.filter(p => p.pieces === n).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      <div className="flex flex-wrap items-center gap-1 mt-1.5">
+        {set.parts.map((part, i) => (
+          <span key={part} className="inline-flex items-center gap-1 text-[11px] font-medium bg-muted rounded px-1.5 py-0.5">
+            <span className="text-muted-foreground">{String.fromCharCode(65 + i)}</span>{part}
+          </span>
+        ))}
+        {set.pieces > 1 && <span className="text-[11px] text-muted-foreground">→ {set.pieces} production jobs per order</span>}
+      </div>
     </div>
   )
 }

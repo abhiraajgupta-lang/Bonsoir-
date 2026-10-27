@@ -13,6 +13,17 @@ import { daysFromToday, relativeDay } from '@/components/TrialDate'
 import { PRODUCTION_STAGES, PAYMENT_METHODS, TRIAL_OUTCOMES, formatCurrency, formatDate, formatDateTime, getDeliveryRisk } from '@/lib/constants'
 import { useAuth } from '@/lib/auth-context'
 
+// The estimate's advance is always "Advance"; later payments are numbered in date order after it.
+function paymentLabel(payments: Array<{ notes: string | null }>, i: number) {
+  const isAdvance = (n: string | null) => /advance payment \(from estimate\)/i.test(n ?? '')
+  if (isAdvance(payments[i].notes)) return 'Advance'
+  const hasAdvance = payments.some(p => isAdvance(p.notes))
+  const n = payments.slice(0, i + 1).filter(p => !isAdvance(p.notes)).length
+  return `Payment ${n + (hasAdvance ? 1 : 0)}`
+}
+
+const istDay = (iso: string) => new Date(new Date(iso).getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10)
+
 type MeasurementSet = { id: string; customerId: string; version: number; date: string; notes: string | null } & Record<string, unknown>
 
 interface OrderData {
@@ -66,6 +77,7 @@ interface OrderData {
     method: string
     receiptReference: string | null
     notes: string | null
+    paymentDate: string
     createdAt: string
   }>
 }
@@ -84,6 +96,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [paymentAmount, setPaymentAmount] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [paymentRef, setPaymentRef] = useState('')
+  const todayIst = () => new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10)
+  const [paymentDate, setPaymentDate] = useState(todayIst)
   const [showTrial, setShowTrial] = useState<string | null>(null)
   const [trialDate, setTrialDate] = useState(new Date().toISOString().slice(0, 10))
   const [trialNotes, setTrialNotes] = useState('')
@@ -169,11 +183,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       amount: paymentAmount,
       method: paymentMethod,
       receiptReference: paymentRef,
+      paymentDate: `${paymentDate}T12:00:00+05:30`,
     })
     if (!res.ok) return alert(res.error)
     setShowPayment(false)
     setPaymentAmount(0)
     setPaymentRef('')
+    setPaymentDate(todayIst())
     load()
   })
 
@@ -522,7 +538,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {showPayment && (
           <div className="bg-card border border-border rounded-xl p-4 mb-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <p className="text-sm font-medium">
+              Recording {order.payments.length === 0 ? 'the first payment' : `payment ${order.payments.length + 1}`} · balance due {formatCurrency(order.balanceDue)}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label htmlFor="payment-date" className="block text-xs font-medium text-muted-foreground mb-1">Payment Date</label>
+                <input
+                  id="payment-date"
+                  type="date"
+                  max={todayIst()}
+                  value={paymentDate}
+                  onChange={e => setPaymentDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/20"
+                />
+              </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Amount (₹)</label>
                 <input
@@ -564,25 +594,43 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {order.payments.length > 0 ? (
           <div className="bg-card border border-border rounded-xl overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[560px]">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase px-4 py-3">Date</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase px-4 py-3">Payment</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase px-4 py-3">Payment Date</th>
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase px-4 py-3">Amount</th>
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase px-4 py-3">Method</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase px-4 py-3 hidden sm:table-cell">Reference</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase px-4 py-3">Reference</th>
                 </tr>
               </thead>
               <tbody>
-                {order.payments.map(p => (
+                {order.payments.map((p, i) => (
                   <tr key={p.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3 text-sm">{formatDate(p.createdAt)}</td>
-                    <td className="px-4 py-3 text-sm font-medium">{formatCurrency(p.amount)}</td>
+                    <td className="px-4 py-3 text-sm font-medium whitespace-nowrap">
+                      {paymentLabel(order.payments, i)}
+                    </td>
+                    <td className="px-4 py-3 text-sm whitespace-nowrap">
+                      {formatDate(p.paymentDate)}
+                      {istDay(p.paymentDate) !== istDay(p.createdAt) && (
+                        <span className="block text-[11px] text-muted-foreground">recorded {formatDate(p.createdAt)}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-medium tabular-nums">{formatCurrency(p.amount)}</td>
                     <td className="px-4 py-3 text-sm">{p.method}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell">{p.receiptReference || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{p.receiptReference || '—'}</td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border bg-muted/30">
+                  <td colSpan={2} className="px-4 py-3 text-sm font-semibold">Total paid · {order.payments.length} payment{order.payments.length !== 1 ? 's' : ''}</td>
+                  <td className="px-4 py-3 text-sm font-bold tabular-nums">{formatCurrency(order.payments.reduce((s, p) => s + p.amount, 0))}</td>
+                  <td colSpan={2} className={`px-4 py-3 text-sm font-medium ${order.balanceDue > 0 ? 'text-red' : 'text-green'}`}>
+                    {order.balanceDue > 0 ? `Balance ${formatCurrency(order.balanceDue)}` : 'Fully paid'}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         ) : (

@@ -25,8 +25,8 @@ export async function GET() {
     }),
     prisma.order.aggregate({ where: { ...notDiscarded, createdAt: { gte: today, lt: tomorrow } }, _sum: { netPayable: true }, _count: true }),
     prisma.order.aggregate({ where: { ...notDiscarded, createdAt: { gte: monthStart } }, _sum: { netPayable: true }, _count: true }),
-    prisma.payment.aggregate({ where: { createdAt: { gte: today, lt: tomorrow }, order: notDiscarded }, _sum: { amount: true } }),
-    prisma.payment.aggregate({ where: { createdAt: { gte: monthStart }, order: notDiscarded }, _sum: { amount: true } }),
+    prisma.payment.aggregate({ where: { paymentDate: { gte: today, lt: tomorrow }, order: notDiscarded }, _sum: { amount: true } }),
+    prisma.payment.aggregate({ where: { paymentDate: { gte: monthStart }, order: notDiscarded }, _sum: { amount: true } }),
     prisma.order.findMany({
       where: { status: 'Active', trialDate: { gte: today, lt: in3Days } },
       orderBy: { trialDate: 'asc' },
